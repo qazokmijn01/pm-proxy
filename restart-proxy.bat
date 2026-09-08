@@ -39,4 +39,4 @@ if /i "%~1"=="nodebug" (
 echo [pm-ai-proxy] Khoi dong lai tren cong %PM_ANTHROPIC_PORT% ...
 echo [pm-ai-proxy] Health: http://127.0.0.1:%PM_ANTHROPIC_PORT%/health   (Ctrl+C de dung)
 echo.
-node "%~dp0..\claude-proxy.mjs"
+node "%~dp0claude-proxy.mjs"

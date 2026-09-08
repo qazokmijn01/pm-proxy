@@ -3,8 +3,8 @@
  * pm-ai-proxy — SERVER tương thích ANTHROPIC MESSAGES API, bắc cầu Claude Code CLI → Postman gateway.
  *
  * Cách dùng (APPROACH.md §2 — mạo danh nhà cung cấp model):
- *   1) Postman Desktop đang mở + đã harvest token/template (node win/harvest.mjs).
- *   2) node win/claude/server.mjs           # mặc định http://127.0.0.1:8788
+ *   1) Postman Desktop đang mở + đã harvest token/template (node harvest.mjs).
+ *   2) node server.mjs           # mặc định http://127.0.0.1:8788
  *   3) Trỏ Claude Code CLI vào proxy:
  *        set ANTHROPIC_BASE_URL=http://127.0.0.1:8788
  *        set ANTHROPIC_API_KEY=pm-proxy        (giá trị bất kỳ; proxy bỏ qua)
@@ -19,8 +19,8 @@
 import http from 'node:http';
 import {
   GATEWAY, APP_VERSION_FALLBACK, readToken, loadTemplate, buildBody, listModels,
-} from '../core.mjs';
-import { applySession } from '../session.mjs';
+} from './core.mjs';
+import { applySession } from './session.mjs';
 import {
   mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP,
   conformToolName, conformInputToSchema,
@@ -33,7 +33,7 @@ import {
   analyzeRequest, buildToolResponses, systemText, extractWorkingDir, isUtilityTurn, utilityReply,
 } from './translate.mjs';
 import { cap, capFull } from './capture.mjs';
-import { isMcpTool, callMcpTool, listMcpTools } from '../mcp.mjs';
+import { isMcpTool, callMcpTool, listMcpTools } from './mcp.mjs';
 import { spawn as _spawn } from 'node:child_process';
 
 const PORT = Number(process.env.PM_ANTHROPIC_PORT || 8788);
@@ -423,7 +423,7 @@ function replyText(res, { stream, model, text }) {
 
 async function handleMessages(req, res, body) {
   const token = readToken();
-  if (!token) return anthropicError(res, 401, 'authentication_error', 'Chưa có Postman token. Chạy: node win/harvest.mjs (và mở Postman Desktop).');
+  if (!token) return anthropicError(res, 401, 'authentication_error', 'Chưa có Postman token. Chạy: node harvest.mjs (và mở Postman Desktop).');
   if (!loadTemplate()) return anthropicError(res, 503, 'api_error', 'Chưa có chat template. Chat 1 câu trong Postman rồi harvest lại.');
 
   const anthropicModel = body.model || 'claude-3-5-sonnet';
@@ -604,6 +604,6 @@ export function startServer(port = PORT, host = HOST) {
 
 export { server, handleMessages, runGateway, prepBody, thinkingFlag, BufferEmitter };
 
-// Chạy trực tiếp: node win/claude/server.mjs  (launcher win/claude-proxy.mjs gọi startServer riêng).
+// Chạy trực tiếp: node server.mjs  (launcher claude-proxy.mjs gọi startServer riêng).
 const invoked = process.argv[1] && /(?:^|[\\/])server\.mjs$/.test(process.argv[1].replace(/\\/g, '/'));
 if (invoked) startServer();

@@ -155,7 +155,7 @@ export function buildToolResponses(results, getToolUse) {
     const g = (groups[gid] = groups[gid] || { conversationId: info.conversationId, groupId: info.groupId, toolResponses: [] });
     let content = r.content == null ? '' : String(r.content);
     let sum = summarize(r.content);
-    // askUser: gateway kỳ vọng answer nằm trong content JSON {status, answer} (theo win/core.mjs đã chạy tốt),
+    // askUser: gateway kỳ vọng answer nằm trong content JSON {status, answer} (theo core.mjs đã chạy tốt),
     // KHÔNG phải JSON thô của AskUserQuestion. Gói lại để model đọc đúng lựa chọn.
     if (info.postmanNative === 'askUser') {
       const answer = extractAskUserAnswer(r.content);

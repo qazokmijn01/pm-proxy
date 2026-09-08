@@ -26,10 +26,10 @@ Claude Code CLI / Agent SDK          pm-ai-proxy              Postman gateway
 | **Postman Desktop** | Phải **đang mở + đã đăng nhập** để harvest token/template. |
 | **Claude Code** | Client. Cần **≥ v2.1.227** nếu muốn dùng `ANTHROPIC_CUSTOM_HEADERS`. |
 
-Cài dependency (chỉ `puppeteer-core`, dùng cho harvest) — chạy tại thư mục gốc dự án:
+Cài dependency (chỉ `puppeteer-core`, dùng cho harvest) — chạy tại thư mục repo:
 
 ```bat
-cd C:\Users\Win10\Desktop\PostmanTool
+cd C:\Users\Win10\Desktop\Workspace\pm-proxy
 npm install
 ```
 
@@ -40,7 +40,7 @@ npm install
 ### Cách A — một lệnh (khuyến nghị)
 
 ```bat
-cd C:\Users\Win10\Desktop\PostmanTool\win\claude
+cd C:\Users\Win10\Desktop\Workspace\pm-proxy
 start-proxy.bat
 ```
 
@@ -55,15 +55,15 @@ start-proxy.bat noharvest
 ### Cách B — thủ công
 
 ```bat
-cd C:\Users\Win10\Desktop\PostmanTool
-node win\harvest.mjs --timeout=30
-node win\claude-proxy.mjs
+cd C:\Users\Win10\Desktop\Workspace\pm-proxy
+node harvest.mjs --timeout=30
+node claude-proxy.mjs
 ```
 
 hoặc qua npm script:
 
 ```bat
-npm run proxy
+npm start
 ```
 
 ### Kiểm tra proxy đã sống
@@ -97,7 +97,7 @@ restart-proxy.bat nodebug    :: tắt log debug
 
 ```bat
 cd C:\du-an-cua-ban
-C:\Users\Win10\Desktop\PostmanTool\win\claude\claude-pm.bat
+C:\Users\Win10\Desktop\Workspace\pm-proxy\claude-pm.bat
 ```
 
 File này set sẵn:
@@ -196,7 +196,7 @@ File: `%USERPROFILE%\.postman-agent-cli\mcp.json`
 | Trường | Ý nghĩa |
 |---|---|
 | `type` | `stdio` (spawn tiến trình, JSON-RPC qua stdin/stdout) hoặc `http` (MCP streamable, tự giữ `Mcp-Session-Id`). |
-| `advertise` | Chỉ ảnh hưởng **chế độ web UI** (`win/ui.mjs`). Với proxy Claude, việc khai báo do `PM_MCP_AUTOREGISTER` quyết định. |
+| `advertise` | Chỉ ảnh hưởng **chế độ web UI** (`ui.mjs` của repo PostmanTool, không thuộc repo này). Với proxy Claude, việc khai báo do `PM_MCP_AUTOREGISTER` quyết định. |
 | `servers.<tên>` | Tên server; tool sẽ lộ ra dưới dạng `mcp__<server>__<tool>`. |
 
 Chưa có file? Tạo mẫu bằng UI web (`POST /api/mcp/init`) hoặc tự tạo tay theo mẫu trên.
@@ -222,7 +222,7 @@ Khi gateway phát tool tên `mcp__*`, proxy **không** chuyển cho client mà t
 ### 6.4 Kiểm tra nhanh
 
 ```bat
-node -e "import('./win/mcp.mjs').then(async m=>{const r=await m.listMcpTools();console.log(r.tools.map(t=>t.name));console.log('errors:',r.errors)})"
+node -e "import('./mcp.mjs').then(async m=>{const r=await m.listMcpTools();console.log(r.tools.map(t=>t.name));console.log('errors:',r.errors)})"
 ```
 
 Bật `DEBUG_PROXY=1` sẽ thấy dòng `[pm-proxy:dbg] mcp thirdParty warmed: fs,chrome-devtools` (hoặc `(none)` khi chưa cấu hình server nào).
@@ -292,7 +292,7 @@ Nằm tại `%USERPROFILE%\.postman-agent-cli\`:
 ### Chạy test
 
 ```bat
-node selftest.mjs      :: hoặc: npm run proxy:test
+node selftest.mjs      :: hoặc: npm start:test
 node nova-verify.mjs
 ```
 
@@ -303,7 +303,7 @@ node nova-verify.mjs
 | Triệu chứng | Nguyên nhân & cách xử lý |
 |---|---|
 | `EADDRINUSE ... :8788` | Proxy đã chạy sẵn. Không cần chạy lại, hoặc đổi cổng: `set PM_ANTHROPIC_PORT=9000`. |
-| HTTP **401** "Chưa có Postman token" | Chưa harvest. Mở Postman Desktop rồi chạy `node win\harvest.mjs`. |
+| HTTP **401** "Chưa có Postman token" | Chưa harvest. Mở Postman Desktop rồi chạy `node harvest.mjs`. |
 | HTTP **503** "Chưa có chat template" | Chat thử 1 câu trong Postman Agent Mode rồi harvest lại. |
 | `taskkill` báo `Access is denied` | Proxy đang chạy quyền admin → mở `restart-proxy.bat` bằng Run as administrator. |
 | Model khai **sai thư mục dự án** | cwd không tới được proxy. Xem mục 5: gửi header `x-pm-working-dir`, hoặc để probe tự hỏi. |
@@ -311,32 +311,36 @@ node nova-verify.mjs
 | Tool MCP trả `[mcp error] …` | Server MCP không khởi động được: soi `command`/`args`/`url`. Chạy lệnh ở mục 6.4 để xem `errors[]`. |
 | `chrome-devtools` báo không nối được Chrome | Proxy tự thử `openclaw browser start`; vẫn lỗi thì chạy tay lệnh đó rồi hỏi lại. |
 | Model dùng **cwd cũ** sau khi đổi thư mục | Phiên đã cache cwd. Mở hội thoại mới, hoặc xoá `.claude-sessions.json` (mục 5). |
-| Harvest thất bại | Postman Desktop chưa mở / chưa đăng nhập. Thử `node win\harvest.mjs --watch`. |
+| Harvest thất bại | Postman Desktop chưa mở / chưa đăng nhập. Thử `node harvest.mjs --watch`. |
 
 ---
 
 ## 11. Cấu trúc thư mục
 
 ```
-win/
+pm-proxy/
 ├── claude-proxy.mjs          launcher gọn (startServer)
+├── server.mjs                HTTP server + vòng đời một lượt (cwd, probe, MCP, gateway)
 ├── harvest.mjs               lấy token + chat-template từ Postman Desktop
 ├── core.mjs                  token/template, buildBody, listModels, GATEWAY
 ├── session.mjs               applySession: workspace + FILE_VIEWER_FOLDER
+├── tools.mjs                 runTool/summarizeTool (bash, file, MCP passthrough)
 ├── mcp.mjs                   MCP host: kết nối stdio/http, tools/list, tools/call
-├── .chat-template.json       template đã harvest (sinh ra, không commit)
-└── claude/
-    ├── server.mjs            HTTP server + vòng đời một lượt (cwd, probe, MCP, gateway)
-    ├── map.mjs               map tool Postman ⇄ Claude Code, map model
-    ├── translate.mjs         phân tích request Anthropic, gom tool_result
-    ├── sse.mjs               phát SSE đúng chuẩn Anthropic
-    ├── sessions.mjs          lưu phiên, cwd đã học, tool_use_id, pending
-    ├── capture.mjs           ghi log chẩn đoán
-    ├── selftest.mjs          39 test
-    ├── nova-verify.mjs       5 test mapping
-    ├── start-proxy.bat       harvest + khởi động
-    ├── restart-proxy.bat     kill cổng + khởi động lại (DEBUG)
-    └── claude-pm.bat         chạy Claude Code trỏ vào proxy
+├── map.mjs                   map tool Postman ⇄ Claude Code, map model
+├── translate.mjs             phân tích request Anthropic, gom tool_result
+├── sse.mjs                   phát SSE đúng chuẩn Anthropic
+├── sessions.mjs              lưu phiên, cwd đã học, tool_use_id, pending
+├── capture.mjs               ghi log chẩn đoán
+├── selftest.mjs              39 test
+├── nova-verify.mjs           5 test mapping
+├── package.json              type: module + puppeteer-core
+├── start-proxy.bat           harvest + khởi động
+├── restart-proxy.bat         kill cổng + khởi động lại (DEBUG)
+├── claude-pm.bat             chạy Claude Code trỏ vào proxy
+└── .chat-template.json       template đã harvest (sinh ra, không commit)
 ```
+
+Repo này **chạy độc lập** — không cần thư mục `PostmanTool`. Lần đầu clone về máy mới:
+`npm install` (cài `puppeteer-core`), rồi `start-proxy.bat`.
 
 Tài liệu liên quan: `docs/claude-cli-anthropic.md`, `docs/tool-mapping.md`, `docs/APPROACH.md`.

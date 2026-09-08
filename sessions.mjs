@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { CACHE_DIR } from '../core.mjs';
+import { CACHE_DIR } from './core.mjs';
 
 const FILE = path.join(CACHE_DIR, '.claude-sessions.json');
 const MAX_SESSIONS = 300;

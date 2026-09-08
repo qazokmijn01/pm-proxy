@@ -1,7 +1,7 @@
 @echo off
 setlocal
 REM Chay Claude Code CLI, tro thang vao pm-ai-proxy (dung credit Postman lam model).
-REM Proxy phai dang chay (win\claude\start-proxy.bat) trong mot cua so khac.
+REM Proxy phai dang chay (start-proxy.bat) trong mot cua so khac.
 REM Vi du:  claude-pm.bat            (mo phien tuong tac)
 REM         claude-pm.bat -p "doc package.json"   (mot lenh headless)
 if "%PM_ANTHROPIC_PORT%"=="" set PM_ANTHROPIC_PORT=8788

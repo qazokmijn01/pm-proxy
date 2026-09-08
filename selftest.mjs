@@ -6,7 +6,7 @@
  * roundtrip đầy đủ qua gateway GIẢ (mock fetch) — cả nhánh tool-cho-client lẫn
  * nhánh drop-rồi-tiếp-tục.
  *
- *   node win/claude/selftest.mjs
+ *   node selftest.mjs
  */
 import assert from 'node:assert';
 import {
@@ -16,7 +16,7 @@ import {
 import { AnthropicSSE } from './sse.mjs';
 import { analyzeRequest, buildToolResponses, extractAskUserAnswer } from './translate.mjs';
 import { runGateway, thinkingFlag, prepBody, BufferEmitter } from './server.mjs';
-import { loadTemplate } from '../core.mjs';
+import { loadTemplate } from './core.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); console.log('  ✓', name); pass++; } catch (e) { console.log('  ✗', name, '→', e.message); fail++; } };
@@ -334,7 +334,7 @@ await okAsync('gateway trả readFile ⇒ proxy phát tool_use Read, stop_reason
   };
   try {
     const emitter = new BufferEmitter({ model: 'claude-x' });
-    const { buildBody } = await import('../core.mjs');
+    const { buildBody } = await import('./core.mjs');
     const gw = buildBody('USER_QUERY', { query: 'hi', conversationId: null });
     await runGateway('faketoken', gw, emitter, { conversationId: null, key: 'k1', model: 'claude-x', opts: baseOpts, round: 0 });
     const msg = emitter.toMessage();
@@ -368,7 +368,7 @@ await okAsync('gateway trả todoWrite (drop) ⇒ proxy tự trả TOOL_RESPONSE
     return sseRes([ev('textChunk', { textContent: 'Xong rồi.' }), '[DONE]']);
   };
   try {
-    const { buildBody } = await import('../core.mjs');
+    const { buildBody } = await import('./core.mjs');
     const emitter = new BufferEmitter({ model: 'claude-x' });
     const gw = buildBody('USER_QUERY', { query: 'làm gì đó', conversationId: null });
     await runGateway('faketoken', gw, emitter, { conversationId: null, key: 'k2', model: 'claude-x', opts: baseOpts, round: 0 });
@@ -395,7 +395,7 @@ await okAsync('gateway phát askUser (client có AskUserQuestion) ⇒ proxy phá
     ]);
   };
   try {
-    const { buildBody } = await import('../core.mjs');
+    const { buildBody } = await import('./core.mjs');
     const emitter = new BufferEmitter({ model: 'claude-x' });
     const gw = buildBody('USER_QUERY', { query: 'giúp em chọn DB', conversationId: null });
     await runGateway('faketoken', gw, emitter, { conversationId: 'conv_ask', key: 'kask', model: 'claude-x', opts: { workingDir: null, pmModelKey: null, claudeTools: CT_ASK, thinking: null }, round: 0 });

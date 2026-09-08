@@ -33,7 +33,7 @@ if /i "%~1"=="noharvest" (
   goto :startproxy
 )
 echo [pm-ai-proxy] Harvest token/template tu Postman Desktop ^(toi da ~30s^) ...
-node "%~dp0..\harvest.mjs" --timeout=30
+node "%~dp0harvest.mjs" --timeout=30
 if errorlevel 1 (
   echo.
   echo [pm-ai-proxy] CANH BAO: harvest that bai ^(Postman chua mo hoac chua dang nhap?^).
@@ -43,7 +43,7 @@ if errorlevel 1 (
 
 :startproxy
 echo [pm-ai-proxy] Khoi dong tren cong %PM_ANTHROPIC_PORT% ...
-node "%~dp0..\claude-proxy.mjs"
+node "%~dp0claude-proxy.mjs"
 if errorlevel 1 (
   echo.
   echo [pm-ai-proxy] LOI: proxy da thoat voi ma loi %errorlevel%.

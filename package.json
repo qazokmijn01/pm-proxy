@@ -1,0 +1,16 @@
+{
+  "name": "pm-proxy",
+  "version": "1.0.0",
+  "description": "pm-ai-proxy - server tuong thich Anthropic API, chuyen tiep sang Postman gateway (dung credit Postman cho Claude Code CLI).",
+  "type": "module",
+  "main": "claude-proxy.mjs",
+  "scripts": {
+    "start": "node claude-proxy.mjs",
+    "harvest": "node harvest.mjs --timeout=30",
+    "test": "node selftest.mjs"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer-core": "^25.10.0"
+  }
+}

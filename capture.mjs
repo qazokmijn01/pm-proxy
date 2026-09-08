@@ -6,7 +6,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { CACHE_DIR } from '../core.mjs';
+import { CACHE_DIR } from './core.mjs';
 
 const FILE = path.join(CACHE_DIR, '.claude-proxy-capture.jsonl');
 const ON = process.env.PM_CAPTURE !== '0'; // bật mặc định; tắt bằng PM_CAPTURE=0
