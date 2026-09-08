@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "pm-ai-proxy - server tuong thich Anthropic API, chuyen tiep sang Postman gateway (dung credit Postman cho Claude Code CLI).",
   "type": "module",
-  "main": "claude-proxy.mjs",
+  "main": "src/claude-proxy.mjs",
   "scripts": {
-    "start": "node claude-proxy.mjs",
-    "harvest": "node harvest.mjs --timeout=30",
-    "test": "node selftest.mjs"
+    "start": "node src/claude-proxy.mjs",
+    "harvest": "node src/harvest.mjs --timeout=30",
+    "test": "node src/selftest.mjs"
   },
   "license": "ISC",
   "dependencies": {

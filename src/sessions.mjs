@@ -1,16 +1,16 @@
 /**
- * SESSION STORE — cầu nối giữa Anthropic (STATELESS: client gửi lại TOÀN BỘ lịch sử mỗi
- * lượt) và Postman /chat (STATEFUL: server giữ conversationId, ta chỉ gửi lượt mới).
+ * SESSION STORE - cau noi giua Anthropic (STATELESS: client gui lai TOAN BO lich su moi
+ * luot) va Postman /chat (STATEFUL: server giu conversationId, ta chi gui luot moi).
  *
- * Khoá phiên = hash của (system ổn định + nội dung user message ĐẦU TIÊN) — bất biến qua
- * các lượt của cùng một hội thoại Claude Code. Nhờ đó lượt USER_QUERY tiếp theo tìm lại
- * đúng conversationId. Lượt tool_result thì tra theo tool_use_id (bản đồ tools).
+ * Khoa phien = hash cua (system on dinh + noi dung user message DAU TIEN) - bat bien qua
+ * cac luot cua cung mot hoi thoai Claude Code. Nho do luot USER_QUERY tiep theo tim lai
+ * dung conversationId. Luot tool_result thi tra theo tool_use_id (ban do tools).
  *
- * Ngoài ra giữ "pending": khi 1 group có tool BỊ DROP (proxy tự trả) lẫn tool cho client,
- * ta cất phần drop lại để GỘP chung TOOL_RESPONSE khi client trả kết quả (Postman kỳ vọng
- * mọi tool trong một group được trả cùng nhau — xem core.mjs).
+ * Ngoai ra giu "pending": khi 1 group co tool BI DROP (proxy tu tra) lan tool cho client,
+ * ta cat phan drop lai de GOP chung TOOL_RESPONSE khi client tra ket qua (Postman ky vong
+ * moi tool trong mot group duoc tra cung nhau - xem core.mjs).
  *
- * Lưu ở %USERPROFILE%\.postman-agent-cli\.claude-sessions.json.
+ * Luu o %USERPROFILE%\.postman-agent-cli\.claude-sessions.json.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,7 +39,7 @@ function saveSoon() {
   }, 200);
 }
 
-// Rút text của một message.content (string | mảng block Anthropic).
+// Rut text cua mot message.content (string | mang block Anthropic).
 function contentText(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -48,7 +48,7 @@ function contentText(content) {
   return '';
 }
 
-/** Khoá phiên ổn định từ system + user message đầu tiên. */
+/** Khoa phien on dinh tu system + user message dau tien. */
 export function sessionKey(system, messages) {
   const sys = typeof system === 'string' ? system : Array.isArray(system) ? system.map((s) => s.text || '').join('\n') : '';
   const firstUser = (messages || []).find((m) => m.role === 'user');
@@ -83,14 +83,14 @@ export function getToolUse(toolUseId) { return state.tools[toolUseId] || null; }
 
 const gkey = (conversationId, groupId) => `${conversationId || '_'}::${groupId || '_'}`;
 
-/** Cất TOOL_RESPONSE của tool bị drop để gộp cùng group ở lượt sau. */
+/** Cat TOOL_RESPONSE cua tool bi drop de gop cung group o luot sau. */
 export function addPending(conversationId, groupId, resp) {
   const k = gkey(conversationId, groupId);
   (state.pending[k] = state.pending[k] || []).push(resp);
   saveSoon();
 }
 
-/** Lấy & xoá các pending của một group. */
+/** Lay & xoa cac pending cua mot group. */
 export function takePending(conversationId, groupId) {
   const k = gkey(conversationId, groupId);
   const arr = state.pending[k] || [];

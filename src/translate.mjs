@@ -1,14 +1,14 @@
 /**
- * DỊCH REQUEST: Anthropic Messages  →  mô tả lượt cho Postman /chat.
+ * DICH REQUEST: Anthropic Messages  ->  mo ta luot cho Postman /chat.
  *
- * Anthropic là stateless: client gửi lại toàn bộ `messages` mỗi lượt. Ta chỉ cần biết
- * LƯỢT MỚI là gì bằng cách nhìn message CUỐI:
- *   - user chứa block tool_result  → lượt TOOL_RESPONSE (client đã chạy tool xong).
- *   - user text thường            → lượt USER_QUERY (câu hỏi/chỉ thị mới).
+ * Anthropic la stateless: client gui lai toan bo `messages` moi luot. Ta chi can biet
+ * LUOT MOI la gi bang cach nhin message CUOI:
+ *   - user chua block tool_result  -> luot TOOL_RESPONSE (client da chay tool xong).
+ *   - user text thuong            -> luot USER_QUERY (cau hoi/chi thi moi).
  */
 import { contentText } from './sessions.mjs';
 
-/** Gom system (string | mảng block) thành 1 chuỗi. */
+/** Gom system (string | mang block) thanh 1 chuoi. */
 export function systemText(system) {
   if (!system) return '';
   if (typeof system === 'string') return system;
@@ -16,14 +16,14 @@ export function systemText(system) {
   return '';
 }
 
-/** Rút "working directory" từ system prompt của Claude Code (khối <env>). */
+/** Rut "working directory" tu system prompt cua Claude Code (khoi <env>). */
 export function extractWorkingDir(system) {
   const t = systemText(system);
   const m = t.match(/working directory:\s*([^\n<]+)/i) || t.match(/\bcwd:\s*([^\n<]+)/i);
   return m ? m[1].trim() : null;
 }
 
-/** tool_result.content (string | mảng block) → chuỗi cho model đọc. */
+/** tool_result.content (string | mang block) -> chuoi cho model doc. */
 export function toolResultToString(content) {
   if (content == null) return '';
   if (typeof content === 'string') return content;
@@ -42,11 +42,11 @@ export function toolResultToString(content) {
 
 const summarize = (s) => {
   const one = String(s || '').replace(/\s+/g, ' ').trim();
-  return one.length > 140 ? one.slice(0, 137) + '…' : (one || '(empty)');
+  return one.length > 140 ? one.slice(0, 137) + '...' : (one || '(empty)');
 };
 
-// Chiều về của AskUserQuestion: content thường là { questions, answers:{"<q>":"<label>"}, response }.
-// Rút ra lựa chọn của người dùng để gói cho gateway.
+// Chieu ve cua AskUserQuestion: content thuong la { questions, answers:{"<q>":"<label>"}, response }.
+// Rut ra lua chon cua nguoi dung de goi cho gateway.
 export function extractAskUserAnswer(raw) {
   const s = raw == null ? '' : String(raw);
   const t = s.trim();
@@ -66,15 +66,15 @@ export function extractAskUserAnswer(raw) {
   return s;
 }
 
-// Claude Code nhét ngữ cảnh (claudeMd, trạng thái git, nhắc việc…) trong các khối
-// <system-reminder>…</system-reminder>. Gateway đã có ngữ cảnh riêng (AGENTS_MD,
-// FILE_VIEWER_FOLDER) nên ta BÓC các khối này ra khỏi query — nếu không, chúng chiếm
-// hết QUERY_CAP và đẩy câu hỏi thật ra ngoài (bị cắt) → model tưởng "không có yêu cầu".
+// Claude Code nhet ngu canh (claudeMd, trang thai git, nhac viec...) trong cac khoi
+// <system-reminder>...</system-reminder>. Gateway da co ngu canh rieng (AGENTS_MD,
+// FILE_VIEWER_FOLDER) nen ta BOC cac khoi nay ra khoi query - neu khong, chung chiem
+// het QUERY_CAP va day cau hoi that ra ngoai (bi cat) -> model tuong "khong co yeu cau".
 const REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/gi;
 export function stripReminders(t) { return String(t == null ? '' : t).replace(REMINDER_RE, '').trim(); }
 
-/** Lấy ĐÚNG lượt nhập mới của con người: các user message sau assistant cuối,
- *  bỏ khối tool_result + <system-reminder>. Fallback: toàn bộ text user cuối. */
+/** Lay DUNG luot nhap moi cua con nguoi: cac user message sau assistant cuoi,
+ *  bo khoi tool_result + <system-reminder>. Fallback: toan bo text user cuoi. */
 export function extractUserQuery(messages) {
   let start = 0;
   for (let i = (messages || []).length - 1; i >= 0; i--) { if (messages[i].role === 'assistant') { start = i + 1; break; } }
@@ -97,33 +97,33 @@ export function extractUserQuery(messages) {
   return contentText(lu && lu.content).trim();
 }
 
-// Claude Code mở đầu bằng các lượt NỀN không cần gateway: sinh tiêu đề hội thoại,
-// dò quota… (thường toolCount=0). Đừng đốt credit + đừng tạo conversation rác cho chúng.
+// Claude Code mo dau bang cac luot NEN khong can gateway: sinh tieu de hoi thoai,
+// do quota... (thuong toolCount=0). Dung dot credit + dung tao conversation rac cho chung.
 export function isUtilityTurn(body) {
   const toolCount = Array.isArray(body.tools) ? body.tools.length : 0;
   if (toolCount > 0) return false;
   const t = (body.messages || []).map((m) => contentText(m.content)).join('\n');
-  return /predominant language of the session|write a? ?\d?.{0,12}title|isNewTopic|<session>/i.test(t) || true; // toolCount===0 ⇒ coi là tiện ích
+  return /predominant language of the session|write a? ?\d?.{0,12}title|isNewTopic|<session>/i.test(t) || true; // toolCount===0 => coi la tien ich
 }
 
-/** Sinh tiêu đề ngắn từ nội dung <session> (hoặc text đầu) — trả về cho lượt title-gen. */
+/** Sinh tieu de ngan tu noi dung <session> (hoac text dau) - tra ve cho luot title-gen. */
 export function utilityReply(body) {
   const t = (body.messages || []).map((m) => contentText(m.content)).join('\n');
   const m = t.match(/<session>\s*([\s\S]*?)\s*<\/session>/i);
   const seed = stripReminders(m ? m[1] : t).split('\n').map((s) => s.trim()).filter(Boolean)[0] || 'Session';
-  return seed.length > 60 ? seed.slice(0, 57) + '…' : seed;
+  return seed.length > 60 ? seed.slice(0, 57) + '...' : seed;
 }
 
 /**
- * Phân tích 1 body Anthropic → { kind, ... }.
- *   kind:'user_query'    → { text }
- *   kind:'tool_result'   → { results:[{ toolUseId, content, isError }] }
+ * Phan tich 1 body Anthropic -> { kind, ... }.
+ *   kind:'user_query'    -> { text }
+ *   kind:'tool_result'   -> { results:[{ toolUseId, content, isError }] }
  */
 export function analyzeRequest(body) {
   const messages = Array.isArray(body.messages) ? body.messages : [];
-  // Quét CẢ lượt sau assistant cuối (không chỉ message cuối): Claude Code hay chèn thêm
-  // một message role:"system" (nhắc việc) SAU user:[tool_result]. Nếu chỉ nhìn message cuối
-  // thì tool_result bị bỏ sót → gửi USER_QUERY rỗng → gateway 403 INPUT_VALIDATION_ERROR → loặp.
+  // Quet CA luot sau assistant cuoi (khong chi message cuoi): Claude Code hay chen them
+  // mot message role:"system" (nhac viec) SAU user:[tool_result]. Neu chi nhin message cuoi
+  // thi tool_result bi bo sot -> gui USER_QUERY rong -> gateway 403 INPUT_VALIDATION_ERROR -> loap.
   let start = 0;
   for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].role === 'assistant') { start = i + 1; break; } }
   const results = [];
@@ -136,14 +136,14 @@ export function analyzeRequest(body) {
     }
   }
   if (results.length) return { kind: 'tool_result', results };
-  // Lượt câu hỏi mới: lấy đúng lượt nhập mới của con người (đã bóc <system-reminder>).
+  // Luot cau hoi moi: lay dung luot nhap moi cua con nguoi (da boc <system-reminder>).
   return { kind: 'user_query', text: extractUserQuery(messages) };
 }
 
 /**
- * Từ các tool_result của client → toolResponses[] Postman, gom theo groupId.
- * getToolUse(id) trả { conversationId, groupId, nativeName } đã lưu lúc phát tool_use.
- * @returns { groups: { [groupId]: { conversationId, toolResponses:[…] } }, unknown:[ids] }
+ * Tu cac tool_result cua client -> toolResponses[] Postman, gom theo groupId.
+ * getToolUse(id) tra { conversationId, groupId, nativeName } da luu luc phat tool_use.
+ * @returns { groups: { [groupId]: { conversationId, toolResponses:[...] } }, unknown:[ids] }
  */
 export function buildToolResponses(results, getToolUse) {
   const groups = {};
@@ -155,8 +155,8 @@ export function buildToolResponses(results, getToolUse) {
     const g = (groups[gid] = groups[gid] || { conversationId: info.conversationId, groupId: info.groupId, toolResponses: [] });
     let content = r.content == null ? '' : String(r.content);
     let sum = summarize(r.content);
-    // askUser: gateway kỳ vọng answer nằm trong content JSON {status, answer} (theo core.mjs đã chạy tốt),
-    // KHÔNG phải JSON thô của AskUserQuestion. Gói lại để model đọc đúng lựa chọn.
+    // askUser: gateway ky vong answer nam trong content JSON {status, answer} (theo core.mjs da chay tot),
+    // KHONG phai JSON tho cua AskUserQuestion. Goi lai de model doc dung lua chon.
     if (info.postmanNative === 'askUser') {
       const answer = extractAskUserAnswer(r.content);
       content = JSON.stringify({ status: 'SUCCESS', answer });

@@ -2,18 +2,18 @@
 /**
  * WINDOWS TOKEN + CHAT-TEMPLATE HARVESTER
  *
- * Khác bản macOS (daemon.js dùng --remote-debugging-pipe fd 3/4 — KHÔNG chạy trên
- * Windows qua Node child_process). Trên Windows, Postman 12+ vẫn BẬT remote-debugging
- * nhưng ép về cổng NGẪU NHIÊN (main.js: appendSwitch("remote-debugging-port","0")).
+ * Khac ban macOS (daemon.js dung --remote-debugging-pipe fd 3/4 - KHONG chay tren
+ * Windows qua Node child_process). Tren Windows, Postman 12+ van BAT remote-debugging
+ * nhung ep ve cong NGAU NHIEN (main.js: appendSwitch("remote-debugging-port","0")).
  * Ta:
- *   1. Tự dò cổng CDP mà tiến trình Postman ĐANG chạy lắng nghe (không cần mở lại app).
- *   2. Gắn (puppeteer-core) vào renderer, inject hook wrap fetch/XHR.
- *   3. Bắt x-access-token + template payload /chat → lưu ra:
+ *   1. Tu do cong CDP ma tien trinh Postman DANG chay lang nghe (khong can mo lai app).
+ *   2. Gan (puppeteer-core) vao renderer, inject hook wrap fetch/XHR.
+ *   3. Bat x-access-token + template payload /chat -> luu ra:
  *        %USERPROFILE%\.postman-agent-cli\token
  *        .chat-template.json
  *
- * Dùng:  node harvest.mjs [--port=NNNN] [--timeout=90] [--watch]
- *   --watch : chạy nền, token đổi thì cập nhật cache (Postman refresh token định kỳ)
+ * Dung:  node src/harvest.mjs [--port=NNNN] [--timeout=90] [--watch]
+ *   --watch : chay nen, token doi thi cap nhat cache (Postman refresh token dinh ky)
  */
 import puppeteer from 'puppeteer-core';
 import { execSync } from 'node:child_process';
@@ -34,10 +34,19 @@ const CACHE_DIR = path.join(os.homedir(), '.postman-agent-cli');
 const TOKEN_CACHE = path.join(CACHE_DIR, 'token');
 const TEMPLATE_FILE = path.join(__dirname, '.chat-template.json');
 
-const mask = (t) => (t ? t.slice(0, 8) + '…(' + t.length + ' ký tự)' : '(none)');
+const mask = (t) => (t ? t.slice(0, 8) + '...(' + t.length + ' ky tu)' : '(none)');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Hook wrap fetch/XHR — copy y nguyên ý tưởng TOKEN_HOOK trong daemon.js bản Mac.
+// Chi chap nhan template /chat THAT SU dung duoc: phai co clientTools.nativeToolsHash.
+// Postman con ban cac request /chat khac (vd chatType=CANCEL_QUERY khi huy 1 luot chat)
+// chi gom vai truong; ghi de cache bang chung se lam proxy mat toan bo toolset.
+const isUsableTemplate = (c) => {
+  const b = c && c.body;
+  if (!b || !b.input || b.input.chatType === 'CANCEL_QUERY') return false;
+  return !!(b.clientTools && b.clientTools.nativeToolsHash);
+};
+
+// Hook wrap fetch/XHR - copy y nguyen y tuong TOKEN_HOOK trong daemon.js ban Mac.
 const HOOK = `(function(){
   if (window.__PM_HOOKED__) return 'already';
   window.__PM_HOOKED__ = true;
@@ -54,7 +63,12 @@ const HOOK = `(function(){
             const body = JSON.parse(init.body);
             const hdrs = {}; h.forEach((v,k)=>{hdrs[k]=v;});
             delete hdrs['x-access-token']; delete hdrs['authorization'];
-            window.__PM_CHAT_CAPTURE__ = { at: new Date().toISOString(), headers: hdrs, body: body };
+            // Chi giu request /chat THAT SU dung lam template. Postman con ban
+            // CANCEL_QUERY (va cac loai khac) khong co clientTools; neu ghi de o day
+            // thi ban tot da bat duoc se mat TRUOC KHI phia Node kip doc (poll 1500ms).
+            const ok = body && body.input && body.input.chatType !== 'CANCEL_QUERY'
+                    && body.clientTools && body.clientTools.nativeToolsHash;
+            if (ok) window.__PM_CHAT_CAPTURE__ = { at: new Date().toISOString(), headers: hdrs, body: body };
           } catch(e){}
         }
       } catch(e){}
@@ -70,7 +84,7 @@ const HOOK = `(function(){
   return 'hooked';
 })()`;
 
-/** Liệt kê PID của Postman đang chạy. */
+/** Liet ke PID cua Postman dang chay. */
 function postmanPids() {
   try {
     const out = execSync('powershell -NoProfile -Command "(Get-Process Postman -ErrorAction SilentlyContinue).Id -join \',\'"').toString().trim();
@@ -78,7 +92,7 @@ function postmanPids() {
   } catch (e) { return []; }
 }
 
-/** Các cổng 127.0.0.1 mà tiến trình Postman đang lắng nghe (ứng viên cổng CDP). */
+/** Cac cong 127.0.0.1 ma tien trinh Postman dang lang nghe (ung vien cong CDP). */
 function postmanListeningPorts() {
   const pids = postmanPids();
   if (!pids.length) return [];
@@ -90,7 +104,7 @@ function postmanListeningPorts() {
   } catch (e) { return []; }
 }
 
-/** Đọc cổng từ file DevToolsActivePort (có thể stale — chỉ dùng làm ứng viên). */
+/** Doc cong tu file DevToolsActivePort (co the stale - chi dung lam ung vien). */
 function devToolsActivePortCandidates() {
   const out = [];
   for (const base of [process.env.APPDATA, process.env.LOCALAPPDATA]) {
@@ -123,14 +137,14 @@ function saveToken(t) {
 }
 
 async function main() {
-  console.log('🔎 Đang dò cổng CDP của Postman đang chạy…');
+  console.log('[search] Dang do cong CDP cua Postman dang chay...');
   const port = await detectPort();
   if (!port) {
-    console.error('❌ Không tìm thấy cổng CDP. Hãy chắc chắn Postman đang mở, rồi chạy lại.');
-    console.error('   (Nếu vẫn lỗi, thử: node harvest.mjs --port=<cổng> — xem trong log khởi động Postman "DevTools listening on ws://127.0.0.1:PORT").');
+    console.error('[X] Khong tim thay cong CDP. Hay chac chan Postman dang mo, roi chay lai.');
+    console.error('   (Neu van loi, thu: node src/harvest.mjs --port=<cong> - xem trong log khoi dong Postman "DevTools listening on ws://127.0.0.1:PORT").');
     process.exit(1);
   }
-  console.log(`✅ Cổng CDP: ${port}`);
+  console.log(`[OK] Cong CDP: ${port}`);
 
   const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${port}`, defaultViewport: null, protocolTimeout: 60000 });
 
@@ -147,8 +161,8 @@ async function main() {
     return n;
   }
   const injected = await injectAll();
-  console.log(`🪝 Đã gắn hook vào ${injected} renderer. Đang chờ app gửi request mang token…`);
-  console.log('   (Nếu chờ lâu: click vài thứ trong Postman. Để bắt TEMPLATE chat, hãy chat 1 câu bất kỳ trong app Postman.)');
+  console.log(`[hook] Da gan hook vao ${injected} renderer. Dang cho app gui request mang token...`);
+  console.log('   (Neu cho lau: click vai thu trong Postman. De bat TEMPLATE chat, hay chat 1 cau bat ky trong app Postman.)');
 
   const t0 = Date.now();
   let savedToken = null;
@@ -165,20 +179,20 @@ async function main() {
     }
     if (token && token !== savedToken) {
       savedToken = token; saveToken(token);
-      console.log(`🔑 Đã bắt & lưu access token: ${mask(token)} → ${TOKEN_CACHE}`);
+      console.log(`[key] Da bat & luu access token: ${mask(token)} -> ${TOKEN_CACHE}`);
     }
-    if (capture && !savedTemplate) {
+    if (capture && !savedTemplate && isUsableTemplate(capture)) {
       fs.writeFileSync(TEMPLATE_FILE, JSON.stringify(capture, null, 2));
       savedTemplate = true;
       const ct = capture.body.input && capture.body.input.chatType;
-      console.log(`📦 Đã chụp template /chat (chatType=${ct}) → ${TEMPLATE_FILE}`);
+      console.log(`[pkg] Da chup template /chat (chatType=${ct}) -> ${TEMPLATE_FILE}`);
     }
     if (!WATCH && savedToken) {
-      if (savedTemplate) { console.log('🎉 Đủ token + template. Xong.'); break; }
-      if (Date.now() - t0 > 8000) { console.log('ℹ️  Đã có token. Chưa thấy template chat (cần chat 1 câu trong app). Vẫn có thể test câu hỏi text.'); break; }
+      if (savedTemplate) { console.log('[done] Du token + template. Xong.'); break; }
+      if (Date.now() - t0 > 8000) { console.log('[i]  Da co token. Chua thay template chat (can chat 1 cau trong app). Van co the test cau hoi text.'); break; }
     }
     if (Date.now() - t0 > TIMEOUT_S * 1000) {
-      if (!savedToken) console.error(`❌ Hết ${TIMEOUT_S}s chưa bắt được token. Thử tương tác trong Postman rồi chạy lại.`);
+      if (!savedToken) console.error(`[X] Het ${TIMEOUT_S}s chua bat duoc token. Thu tuong tac trong Postman roi chay lai.`);
       break;
     }
     await sleep(1500);
@@ -188,4 +202,4 @@ async function main() {
   process.exit(savedToken ? 0 : 2);
 }
 
-main().catch((e) => { console.error('💥 Lỗi:', e.message); process.exit(1); });
+main().catch((e) => { console.error('[err] Loi:', e.message); process.exit(1); });

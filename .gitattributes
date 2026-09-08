@@ -1,0 +1,6 @@
+# Script shell PHAI la LF, neu khong shebang se thanh "/usr/bin/env bash\r"
+# va Linux/macOS bao "bad interpreter". core.autocrlf khong duoc pha dieu nay.
+*.sh  text eol=lf
+
+# Batch cua Windows giu CRLF (cmd.exe co the seek sai voi goto/call tren file LF).
+*.bat text eol=crlf

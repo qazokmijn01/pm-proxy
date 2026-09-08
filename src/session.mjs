@@ -1,6 +1,6 @@
 /**
- * SESSION CONTEXT — workspace + thư mục làm việc theo TỪNG phiên (state per-request).
- * Ghi đè đúng field trong payload /chat mà app dùng:
+ * SESSION CONTEXT - workspace + thu muc lam viec theo TUNG phien (state per-request).
+ * Ghi de dung field trong payload /chat ma app dung:
  *   - mandatoryContext.workspaceId
  *   - backgroundContext[ACTIVE_WORKSPACE]  = { name, id }
  *   - backgroundContext[FILE_VIEWER_FOLDER] = { path, isOpen, platform, description, projectOverview }
@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadTemplate } from './core.mjs';
 
-/** Liệt kê thư mục con + file (path rỗng → danh sách ổ đĩa). Dùng cho folder browser. */
+/** Liet ke thu muc con + file (path rong -> danh sach o dia). Dung cho folder browser. */
 export function listDir(dir) {
   if (!dir || dir === '' || dir === '\\' || dir === '/') {
     const drives = [];
@@ -28,7 +28,7 @@ export function listDir(dir) {
   } catch (e) { return { path: dir, parent: path.dirname(dir), error: e.message, dirs: [], files: [] }; }
 }
 
-/** projectOverview đúng shape app dùng. */
+/** projectOverview dung shape app dung. */
 export function projectOverview(dir) {
   try {
     const ents = fs.readdirSync(dir, { withFileTypes: true });
@@ -48,7 +48,7 @@ export function fileViewerFolder(dir) {
   };
 }
 
-/** Ghi đè workspace + thư mục làm việc cho phiên vào payload. */
+/** Ghi de workspace + thu muc lam viec cho phien vao payload. */
 export function applySession(body, session = {}) {
   const { workspaceId, workspaceName, workingDir } = session;
   body.backgroundContext = Array.isArray(body.backgroundContext) ? body.backgroundContext : [];

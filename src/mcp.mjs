@@ -1,21 +1,21 @@
 /**
- * MCP CLIENT (chế độ web) — biến tool này thành MCP *host*: kết nối tới các MCP server
- * (stdio hoặc HTTP streamable), liệt kê tool (tools/list) và thực thi tool (tools/call).
+ * MCP CLIENT (che do web) - bien tool nay thanh MCP *host*: ket noi toi cac MCP server
+ * (stdio hoac HTTP streamable), liet ke tool (tools/list) va thuc thi tool (tools/call).
  *
- * Vì sao cần: agent-mode của Postman coi MCP tool là "client tool" — CHÍNH client phải
- * chạy tool rồi trả kết quả. Bản replay này trước đây không có ai chạy nên tool MCP luôn
- * rơi vào UNSUPPORTED. Module này bổ sung phần thực thi đó.
+ * Vi sao can: agent-mode cua Postman coi MCP tool la "client tool" - CHINH client phai
+ * chay tool roi tra ket qua. Ban replay nay truoc day khong co ai chay nen tool MCP luon
+ * roi vao UNSUPPORTED. Module nay bo sung phan thuc thi do.
  *
  * CONFIG: %USERPROFILE%\.postman-agent-cli\mcp.json
  * {
- *   "advertise": false,          // true = tự khai báo tool MCP vào payload /chat (thử nghiệm)
+ *   "advertise": false,          // true = tu khai bao tool MCP vao payload /chat (thu nghiem)
  *   "servers": {
  *     "fs":      { "type": "stdio", "command": "npx", "args": ["-y","@modelcontextprotocol/server-filesystem","."], "env": {}, "cwd": "." },
  *     "remote":  { "type": "http",  "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ..." } }
  *   }
  * }
  *
- * Tên tool expose cho agent: mcp__<server>__<tool>  → khi agent gọi, ta decode để định tuyến.
+ * Ten tool expose cho agent: mcp__<server>__<tool>  -> khi agent goi, ta decode de dinh tuyen.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -49,15 +49,15 @@ export function loadMcpConfig() {
   return { advertise, servers };
 }
 
-/** Tạo file config mẫu nếu chưa có. Trả về { created, path }. */
+/** Tao file config mau neu chua co. Tra ve { created, path }. */
 export function ensureMcpConfig() {
   if (fs.existsSync(MCP_CONFIG_FILE)) return { created: false, path: MCP_CONFIG_FILE };
   const sample = {
     advertise: false,
     servers: {
-      // Ví dụ stdio (bỏ comment & sửa lại để dùng):
+      // Vi du stdio (bo comment & sua lai de dung):
       // "fs": { "type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }
-      // Ví dụ HTTP:
+      // Vi du HTTP:
       // "remote": { "type": "http", "url": "https://your-server/mcp", "headers": {} }
     },
   };
@@ -75,7 +75,7 @@ export function decodeName(full) {
 }
 export const isMcpTool = (name) => typeof name === 'string' && name.startsWith(PREFIX);
 
-// ---------------- Connections (giữ sống, cache theo tên server) ----------------
+// ---------------- Connections (giu song, cache theo ten server) ----------------
 const conns = new Map(); // name -> conn
 
 function stdioConnect(name, cfg) {
@@ -102,12 +102,12 @@ function stdioConnect(name, cfg) {
   child.on('error', (e) => { conn.lastErr = e.message; });
   child.on('exit', (code) => {
     conns.delete(name);
-    for (const { reject, timer } of conn.pending.values()) { clearTimeout(timer); reject(new Error('MCP server "' + name + '" thoát (code ' + code + ')' + (conn.lastErr ? ': ' + conn.lastErr : ''))); }
+    for (const { reject, timer } of conn.pending.values()) { clearTimeout(timer); reject(new Error('MCP server "' + name + '" thoat (code ' + code + ')' + (conn.lastErr ? ': ' + conn.lastErr : ''))); }
     conn.pending.clear(); conn.initialized = false;
   });
   conn.rpc = (method, params) => new Promise((resolve, reject) => {
     const id = conn.nextId++;
-    const timer = setTimeout(() => { if (conn.pending.has(id)) { conn.pending.delete(id); reject(new Error('MCP timeout (' + method + ') từ "' + name + '"')); } }, RPC_TIMEOUT);
+    const timer = setTimeout(() => { if (conn.pending.has(id)) { conn.pending.delete(id); reject(new Error('MCP timeout (' + method + ') tu "' + name + '"')); } }, RPC_TIMEOUT);
     conn.pending.set(id, { resolve, reject, timer });
     try { child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params: params || {} }) + '\n'); }
     catch (e) { clearTimeout(timer); conn.pending.delete(id); reject(e); }
@@ -156,7 +156,7 @@ async function ensureConn(name) {
   const existing = conns.get(name);
   if (existing && existing.initialized) return existing;
   const cfg = loadMcpConfig().servers[name];
-  if (!cfg) throw new Error('MCP server chưa được cấu hình: ' + name);
+  if (!cfg) throw new Error('MCP server chua duoc cau hinh: ' + name);
   const conn = cfg.type === 'http' ? httpConnect(name, cfg) : stdioConnect(name, cfg);
   conns.set(name, conn);
   await conn.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'postman-agent-cli', version: '1.0.0' } });
@@ -165,7 +165,7 @@ async function ensureConn(name) {
   return conn;
 }
 
-/** Kết nối mọi server đã cấu hình & liệt kê tool. Trả về { tools, errors, advertise }. */
+/** Ket noi moi server da cau hinh & liet ke tool. Tra ve { tools, errors, advertise }. */
 export async function listMcpTools() {
   const cfg = loadMcpConfig();
   const tools = [], errors = [];
@@ -181,18 +181,18 @@ export async function listMcpTools() {
   return { tools, errors, advertise: !!cfg.advertise };
 }
 
-/** Gọi 1 tool MCP theo tên đã encode (mcp__server__tool). Trả về shape giống runTool. */
+/** Goi 1 tool MCP theo ten da encode (mcp__server__tool). Tra ve shape giong runTool. */
 export async function callMcpTool(fullName, args) {
   const d = decodeName(fullName);
-  if (!d) return { status: 'ERROR', message: 'Tên tool MCP không hợp lệ: ' + fullName };
+  if (!d) return { status: 'ERROR', message: 'Ten tool MCP khong hop le: ' + fullName };
   try {
     const conn = await ensureConn(d.server);
     const r = await conn.rpc('tools/call', { name: d.tool, arguments: args || {} });
     const content = (r && r.content) || [];
     const text = content.map((c) => (c && c.type === 'text' ? c.text : (c && c.type === 'resource' ? JSON.stringify(c.resource) : JSON.stringify(c)))).join('\n');
-    return { status: r && r.isError ? 'ERROR' : 'SUCCESS', server: d.server, tool: d.tool, content: text || '(không có nội dung)', structuredContent: r && r.structuredContent };
+    return { status: r && r.isError ? 'ERROR' : 'SUCCESS', server: d.server, tool: d.tool, content: text || '(khong co noi dung)', structuredContent: r && r.structuredContent };
   } catch (e) { return { status: 'ERROR', message: e.message }; }
 }
 
-/** Đóng toàn bộ kết nối (khi cần reload config). */
+/** Dong toan bo ket noi (khi can reload config). */
 export function closeAllMcp() { for (const c of conns.values()) { try { c.close(); } catch {} } conns.clear(); }

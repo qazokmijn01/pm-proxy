@@ -1,11 +1,11 @@
 /**
- * WINDOWS POSTMAN AGENT — CORE dùng chung cho harvest.mjs / agent.mjs / ui.mjs
+ * WINDOWS POSTMAN AGENT - CORE dung chung cho harvest.mjs / agent.mjs / ui.mjs
  *
- * Cơ chế Windows (khác bản Mac dùng pipe fd 3/4): Postman 12+ vẫn bật remote-debugging
- * nhưng ép về cổng NGẪU NHIÊN. Ta tự dò cổng CDP mà tiến trình Postman ĐANG chạy lắng
- * nghe, gắn puppeteer-core vào renderer để bắt token + template /chat, rồi replay /chat.
+ * Co che Windows (khac ban Mac dung pipe fd 3/4): Postman 12+ van bat remote-debugging
+ * nhung ep ve cong NGAU NHIEN. Ta tu do cong CDP ma tien trinh Postman DANG chay lang
+ * nghe, gan puppeteer-core vao renderer de bat token + template /chat, roi replay /chat.
  *
- * ⚠️ API nội bộ chưa công khai của Postman — có thể đổi bất cứ lúc nào; tiêu thụ credit AI.
+ * [!] API noi bo chua cong khai cua Postman - co the doi bat cu luc nao; tieu thu credit AI.
  */
 import puppeteer from 'puppeteer-core';
 import { execSync } from 'node:child_process';
@@ -24,7 +24,7 @@ export const IMAGE_SAMPLE_FILE = path.join(__dirname, '.chat-image-sample.json')
 export const GATEWAY = process.env.PM_GATEWAY || 'https://gateway.postman.com';
 export const APP_VERSION_FALLBACK = process.env.PM_APP_VERSION || '12.22.6';
 
-export const mask = (t) => (t ? t.slice(0, 8) + '…(' + t.length + ' ký tự)' : '(none)');
+export const mask = (t) => (t ? t.slice(0, 8) + '...(' + t.length + ' ky tu)' : '(none)');
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function readToken() { try { return fs.readFileSync(TOKEN_CACHE, 'utf8').trim() || null; } catch { return null; } }
@@ -32,7 +32,7 @@ export function saveToken(t) { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.
 export function loadTemplate() { try { return JSON.parse(fs.readFileSync(TEMPLATE_FILE, 'utf8')); } catch { return null; } }
 export function saveTemplate(cap) { fs.writeFileSync(TEMPLATE_FILE, JSON.stringify(cap, null, 2)); }
 
-// Hook wrap fetch/XHR — bắt x-access-token + payload /chat thật của app làm template.
+// Hook wrap fetch/XHR - bat x-access-token + payload /chat that cua app lam template.
 export const HOOK = `(function(){
   if (window.__PM_HOOKED__) return 'already';
   window.__PM_HOOKED__ = true;
@@ -65,8 +65,8 @@ export const HOOK = `(function(){
   return 'hooked';
 })()`;
 
-// Hook PHỤ (độc lập với HOOK) — bắt request liên quan ẢNH/đính kèm + payload /chat có ảnh.
-// Base64/data-URI được REDACT (chỉ giữ độ dài + đầu chuỗi) để file mẫu gọn & dễ đọc.
+// Hook PHU (doc lap voi HOOK) - bat request lien quan ANH/dinh kem + payload /chat co anh.
+// Base64/data-URI duoc REDACT (chi giu do dai + dau chuoi) de file mau gon & de doc.
 export const IMAGE_HOOK = `(function(){
   if (window.__PM_IMG_HOOKED__) return 'already';
   window.__PM_IMG_HOOKED__ = true;
@@ -138,7 +138,7 @@ export const IMAGE_HOOK = `(function(){
   return 'img-hooked';
 })()`;
 
-// ---------------- Dò cổng CDP ----------------
+// ---------------- Do cong CDP ----------------
 function ps(cmd) { return execSync(`powershell -NoProfile -Command "${cmd}"`, { timeout: 15000 }).toString().trim(); }
 
 export function postmanPids() {
@@ -187,8 +187,8 @@ export async function detectPort(force) {
 // ---------------- Harvest token + template ----------------
 export async function harvest({ port = null, timeout = 90, watch = false, requireTemplate = false, log = () => {} } = {}) {
   const cdpPort = await detectPort(port);
-  if (!cdpPort) throw new Error('Không tìm thấy cổng CDP của Postman. Hãy chắc chắn Postman đang mở.');
-  log(`Cổng CDP: ${cdpPort}`);
+  if (!cdpPort) throw new Error('Khong tim thay cong CDP cua Postman. Hay chac chan Postman dang mo.');
+  log(`Cong CDP: ${cdpPort}`);
   const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${cdpPort}`, defaultViewport: null, protocolTimeout: 60000 });
 
   async function injectAll() {
@@ -198,7 +198,7 @@ export async function harvest({ port = null, timeout = 90, watch = false, requir
     return n;
   }
   await injectAll();
-  log('Đã gắn hook. Đang chờ token…');
+  log('Da gan hook. Dang cho token...');
 
   const t0 = Date.now();
   let token = null, template = loadTemplate();
@@ -213,8 +213,8 @@ export async function harvest({ port = null, timeout = 90, watch = false, requir
           if (r.c && r.c.body) capture = r.c;
         } catch {}
       }
-      if (token) { const cur = readToken(); if (token !== cur) { saveToken(token); log('Đã lưu token: ' + mask(token)); } }
-      if (capture) { const chatType = capture.body.input && capture.body.input.chatType; saveTemplate(capture); template = capture; log('Đã chụp template /chat (chatType=' + chatType + ')'); }
+      if (token) { const cur = readToken(); if (token !== cur) { saveToken(token); log('Da luu token: ' + mask(token)); } }
+      if (capture) { const chatType = capture.body.input && capture.body.input.chatType; saveTemplate(capture); template = capture; log('Da chup template /chat (chatType=' + chatType + ')'); }
       const enough = token && (!requireTemplate || template);
       if (!watch && enough) { if (template || Date.now() - t0 > 8000) break; }
       if (Date.now() - t0 > timeout * 1000) break;
@@ -226,13 +226,13 @@ export async function harvest({ port = null, timeout = 90, watch = false, requir
   return { port: cdpPort, token, template, browser: watch ? browser : null };
 }
 
-// ---------------- Bắt mẫu payload có ẢNH (để xem field/định dạng gateway nhận) ----------------
-// KHÔNG ghi đè .chat-template.json. Chờ tối đa `timeout` giây cho tới khi thấy /chat có ảnh.
-// Trả về { file, sample } với base64 đã redact. Lưu ra .chat-image-sample.json.
+// ---------------- Bat mau payload co ANH (de xem field/dinh dang gateway nhan) ----------------
+// KHONG ghi de .chat-template.json. Cho toi da `timeout` giay cho toi khi thay /chat co anh.
+// Tra ve { file, sample } voi base64 da redact. Luu ra .chat-image-sample.json.
 export async function harvestImageSample({ port = null, timeout = 120, log = () => {} } = {}) {
   const cdpPort = await detectPort(port);
-  if (!cdpPort) throw new Error('Không tìm thấy cổng CDP của Postman. Hãy chắc chắn Postman đang mở.');
-  log('Cổng CDP: ' + cdpPort);
+  if (!cdpPort) throw new Error('Khong tim thay cong CDP cua Postman. Hay chac chan Postman dang mo.');
+  log('Cong CDP: ' + cdpPort);
   const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${cdpPort}`, defaultViewport: null, protocolTimeout: 60000 });
   const inject = async () => {
     const pages = await browser.pages();
@@ -244,7 +244,7 @@ export async function harvestImageSample({ port = null, timeout = 120, log = () 
     }
   };
   await inject();
-  log('Đã gắn hook ảnh. HÃY paste/đính kèm 1 ẢNH trong Agent Mode (app Postman) rồi GỬI…');
+  log('Da gan hook anh. HAY paste/dinh kem 1 ANH trong Agent Mode (app Postman) roi GUI...');
 
   const t0 = Date.now();
   let img = null, captures = [];
@@ -259,8 +259,8 @@ export async function harvestImageSample({ port = null, timeout = 120, log = () 
           if (Array.isArray(r.caps) && r.caps.length) captures = r.caps;
         } catch {}
       }
-      if (img) { log('Đã bắt được payload /chat có ảnh.'); break; }
-      if (Date.now() - t0 > timeout * 1000) { log('Hết thời gian chờ (chưa thấy /chat có ảnh).'); break; }
+      if (img) { log('Da bat duoc payload /chat co anh.'); break; }
+      if (Date.now() - t0 > timeout * 1000) { log('Het thoi gian cho (chua thay /chat co anh).'); break; }
       await sleep(1500);
     }
   } finally {
@@ -274,9 +274,9 @@ export async function harvestImageSample({ port = null, timeout = 120, log = () 
 
 // ---------------- Chat relay ----------------
 const DEFAULT_WORKSPACE_ID = process.env.PM_WORKSPACE_ID || null;
-// Tool có tác động (ghi/chạy lệnh/gửi request) — ở chế độ Ask sẽ hỏi duyệt trước khi chạy.
+// Tool co tac dong (ghi/chay lenh/gui request) - o che do Ask se hoi duyet truoc khi chay.
 export const MUTATING_TOOLS = new Set(['createFile', 'editFile', 'executeShellCommand', 'sendRequest']);
-// Tool cần "gate" ở chế độ Ask/Plan: tool ghi/chạy/gửi + MỌI tool MCP (mcp__*) vì có thể gây tác động.
+// Tool can "gate" o che do Ask/Plan: tool ghi/chay/gui + MOI tool MCP (mcp__*) vi co the gay tac dong.
 export const isGatedTool = (name) => MUTATING_TOOLS.has(name) || (typeof name === 'string' && name.startsWith('mcp__'));
 
 export function applyMode(body, mode) {
@@ -296,7 +296,7 @@ export function applyMode(body, mode) {
     excluded = excluded.filter((t) => t !== 'askUser');
     for (const mt of ['createFile', 'editFile', 'executeShellCommand', 'sendRequest']) if (!excluded.includes(mt)) excluded.push(mt);
   }
-  dm.isLoopApprovalEnabled = false; // tự gate ở phía tool, không dùng loop-approval của gateway
+  dm.isLoopApprovalEnabled = false; // tu gate o phia tool, khong dung loop-approval cua gateway
   ct.excludedTools = excluded;
   return body;
 }
@@ -333,11 +333,11 @@ function chatHeaders(token) {
 }
 
 /**
- * Gọi /chat, stream SSE, phát sự kiện chuẩn hoá qua send({type,...}).
- * Điểm mấu chốt (streaming format postman-agentmode-2025-06-25): tool call phát dưới dạng
- * toolCallChunk (arguments theo mảnh) rồi [DONE]. Ta GOM theo id → khi hết stream mà còn
- * tool chờ, THỰC THI tool đọc trong thư mục workspace rồi trả TOOL_RESPONSE (theo group)
- * để agent chạy tiếp. ctx: { conversationId, workingDir, signal, onConversationId, toolRounds }
+ * Goi /chat, stream SSE, phat su kien chuan hoa qua send({type,...}).
+ * Diem mau chot (streaming format postman-agentmode-2025-06-25): tool call phat duoi dang
+ * toolCallChunk (arguments theo manh) roi [DONE]. Ta GOM theo id -> khi het stream ma con
+ * tool cho, THUC THI tool doc trong thu muc workspace roi tra TOOL_RESPONSE (theo group)
+ * de agent chay tiep. ctx: { conversationId, workingDir, signal, onConversationId, toolRounds }
  */
 export async function chatRoundtrip(token, body, send, depth = 0, ctx = {}) { if (ctx.applyContext) { try { ctx.applyContext(body); } catch {} }
   const res = await fetch(`${GATEWAY}/chat`, { method: 'POST', signal: ctx.signal, headers: chatHeaders(token), body: JSON.stringify(body) });
@@ -367,7 +367,7 @@ export async function chatRoundtrip(token, body, send, depth = 0, ctx = {}) { if
         for (const c of calls) {
           if (!c || !c.id) continue;
           let a = toolAcc[c.id];
-          if (!a) { a = { id: c.id, name: (c.function && c.function.name) || c.name || 'tool', groupId: c.toolCallGroupId || (d && d.toolCallGroupId) || null, args: '' }; toolAcc[c.id] = a; order.push(c.id); send({ type: 'tool', name: a.name, note: 'agent gọi tool…' }); }
+          if (!a) { a = { id: c.id, name: (c.function && c.function.name) || c.name || 'tool', groupId: c.toolCallGroupId || (d && d.toolCallGroupId) || null, args: '' }; toolAcc[c.id] = a; order.push(c.id); send({ type: 'tool', name: a.name, note: 'agent goi tool...' }); }
           if (c.function && c.function.name) a.name = c.function.name;
           if (c.function && typeof c.function.arguments === 'string') a.args += c.function.arguments;
         }
@@ -379,7 +379,7 @@ export async function chatRoundtrip(token, body, send, depth = 0, ctx = {}) { if
         break;
       }
       case 'loopApprovalChunk':
-        send({ type: 'status', text: '🔁 Checkpoint — tự động Continue' });
+        send({ type: 'status', text: '[retry] Checkpoint - tu dong Continue' });
         if (depth < 10) await chatRoundtrip(token, buildBody('USER_CONTINUE_LOOP', { conversationId: ctx.conversationId }), send, depth + 1, ctx).catch(() => {});
         break;
       case 'usage': if (d) send({ type: 'usage', usage: d.usage, limit: d.limit, state: d.usageState }); break;
@@ -406,7 +406,7 @@ export async function chatRoundtrip(token, body, send, depth = 0, ctx = {}) { if
     if (done) break;
   }
 
-  // Hết stream: nếu còn tool đang chờ → chạy tool đọc rồi trả TOOL_RESPONSE để agent tiếp tục.
+  // Het stream: neu con tool dang cho -> chay tool doc roi tra TOOL_RESPONSE de agent tiep tuc.
   const ids = order.filter((id) => toolAcc[id]);
   if (ids.length && depth < 10) {
     const groups = {};
@@ -416,17 +416,17 @@ export async function chatRoundtrip(token, body, send, depth = 0, ctx = {}) { if
       for (const t of groups[gid]) {
         let args = {};
         try { args = t.args ? JSON.parse(t.args) : {}; } catch { args = {}; }
-        send({ type: 'tool', name: t.name, args: t.args || '', note: (t.name === 'askUser' ? 'đang hỏi bạn…' : (ctx.mode === 'ask' && isGatedTool(t.name) ? 'chờ bạn duyệt…' : 'đang chạy trên server (thư mục workspace)…')) });
+        send({ type: 'tool', name: t.name, args: t.args || '', note: (t.name === 'askUser' ? 'dang hoi ban...' : (ctx.mode === 'ask' && isGatedTool(t.name) ? 'cho ban duyet...' : 'dang chay tren server (thu muc workspace)...')) });
         let result;
         if (t.name === 'askUser' && ctx.askUser) {
-          const q = args.question || args.prompt || args.message || args.text || 'Agent cần thêm thông tin.';
+          const q = args.question || args.prompt || args.message || args.text || 'Agent can them thong tin.';
           const ans = await ctx.askUser({ question: q, options: args.options || null });
           result = { status: 'SUCCESS', answer: (ans && ans.answer) || '' };
         } else if (ctx.mode === 'plan' && isGatedTool(t.name)) {
-          result = { status: 'REJECTED', message: 'Chế độ Plan: chỉ lập kế hoạch, chưa thực thi tool ghi/chạy lệnh/gửi request/MCP. Hãy nêu kế hoạch rồi chuyển Auto/Ask để chạy.' };
+          result = { status: 'REJECTED', message: 'Che do Plan: chi lap ke hoach, chua thuc thi tool ghi/chay lenh/gui request/MCP. Trinh bay ke hoach roi chuyen sang che do Auto/Ask de chay.' };
         } else if (ctx.mode === 'ask' && isGatedTool(t.name) && ctx.requestApproval) {
           const dec = await ctx.requestApproval({ name: t.name, args: t.args || '' });
-          result = (dec && dec.approved) ? await runTool(t.name, args, ctx.workingDir) : { status: 'REJECTED', message: 'Người dùng từ chối chạy tool này.' };
+          result = (dec && dec.approved) ? await runTool(t.name, args, ctx.workingDir) : { status: 'REJECTED', message: 'Nguoi dung tu choi chay tool nay.' };
         } else {
           result = await runTool(t.name, args, ctx.workingDir);
         }
@@ -434,16 +434,16 @@ export async function chatRoundtrip(token, body, send, depth = 0, ctx = {}) { if
         toolResponses.push({ toolCallId: t.id, content: JSON.stringify(result), toolResponseSummary: summarizeTool(t.name, result), toolResponseStatus: result.status === 'SUCCESS' ? 'SUCCESS' : 'FAILURE' });
       }
       await chatRoundtrip(token, buildBody('TOOL_RESPONSE', { conversationId: ctx.conversationId, toolCallGroupId: gid === '_' ? undefined : gid, toolResponses }), send, depth + 1, ctx)
-        .catch((e) => { send({ type: 'error', message: 'Lỗi gửi TOOL_RESPONSE: ' + e.message, errorType: e.errorType }); });
+        .catch((e) => { send({ type: 'error', message: 'Loi gui TOOL_RESPONSE: ' + e.message, errorType: e.errorType }); });
     }
   }
 }
 
-// ---------------- Danh sách model (GET /config) ----------------
+// ---------------- Danh sach model (GET /config) ----------------
 let modelsCache = { at: 0, data: null };
 export async function listModels() {
   const token = readToken();
-  if (!token) return { error: 'Chưa có token.' };
+  if (!token) return { error: 'Chua co token.' };
   if (modelsCache.data && Date.now() - modelsCache.at < 300000) return modelsCache.data;
   const res = await fetch(`${GATEWAY}/config`, { headers: { 'x-access-token': token, 'x-pstmn-req-service': 'agent-mode-service', 'x-app-version': APP_VERSION_FALLBACK } });
   if (!res.ok) return { error: `HTTP ${res.status}` };

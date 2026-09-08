@@ -1,27 +1,27 @@
 /**
- * ANTHROPIC SSE WRITER — phát đúng chuỗi sự kiện của Messages API (stream=true):
+ * ANTHROPIC SSE WRITER - phat dung chuoi su kien cua Messages API (stream=true):
  *
  *   message_start
- *   ( content_block_start → content_block_delta* → content_block_stop )*
+ *   ( content_block_start -> content_block_delta* -> content_block_stop )*
  *   message_delta   (mang stop_reason)
  *   message_stop
  *
- * Sai một tên delta là client im lặng (APPROACH.md §4) → giữ đúng shape tuyệt đối.
- * text  → delta {type:'text_delta', text}
- * tool  → content_block_start {type:'tool_use', id, name, input:{}} rồi
- *          content_block_delta {type:'input_json_delta', partial_json} (gửi trọn 1 mảnh)
- * Claude Code tự gom partial_json và JSON.parse ở content_block_stop.
+ * Sai mot ten delta la client im lang (APPROACH.md #4) -> giu dung shape tuyet doi.
+ * text  -> delta {type:'text_delta', text}
+ * tool  -> content_block_start {type:'tool_use', id, name, input:{}} roi
+ *          content_block_delta {type:'input_json_delta', partial_json} (gui tron 1 manh)
+ * Claude Code tu gom partial_json va JSON.parse o content_block_stop.
  */
 
 const now36 = () => Date.now().toString(36);
 export function genMessageId() { return 'msg_' + now36() + Math.random().toString(36).slice(2, 10); }
 
-// Chữ ký placeholder cho thinking block. Anthropic thật dùng chữ ký mật mã để UPSTREAM verify
-// ở lượt sau; ở đây PROXY chính là upstream và KHÔNG verify (analyzeRequest bỏ qua thinking block
-// khi đọc lại), nên một giá trị non-empty là đủ để client hiển thị thinking.
+// Chu ky placeholder cho thinking block. Anthropic that dung chu ky mat ma de UPSTREAM verify
+// o luot sau; o day PROXY chinh la upstream va KHONG verify (analyzeRequest bo qua thinking block
+// khi doc lai), nen mot gia tri non-empty la du de client hien thi thinking.
 export const THINKING_SIG = process.env.PM_THINKING_SIG || 'pm-ai-proxy-thinking-sig';
 
-/** Ước lượng token thô (~4 ký tự/token) — đủ cho message_start.usage và /count_tokens. */
+/** Uoc luong token tho (~4 ky tu/token) - du cho message_start.usage va /count_tokens. */
 export function estimateTokens(...parts) {
   let chars = 0;
   const walk = (v) => {
@@ -72,7 +72,7 @@ export class AnthropicSSE {
 
   _closeBlock() {
     if (!this.open) return;
-    // Thinking block: Anthropic phát signature_delta NGAY TRƯỚC content_block_stop.
+    // Thinking block: Anthropic phat signature_delta NGAY TRUOC content_block_stop.
     if (this.blockType === 'thinking') {
       this._send('content_block_delta', { type: 'content_block_delta', index: this.index, delta: { type: 'signature_delta', signature: THINKING_SIG } });
     }
@@ -81,7 +81,7 @@ export class AnthropicSSE {
     this.blockType = null;
   }
 
-  /** Phát thinking (extended thinking). Chỉ gọi khi client bật thinking. */
+  /** Phat thinking (extended thinking). Chi goi khi client bat thinking. */
   thinkingDelta(text) {
     if (!text) return;
     this.start();
@@ -107,14 +107,14 @@ export class AnthropicSSE {
     this._send('content_block_delta', { type: 'content_block_delta', index: this.index, delta: { type: 'text_delta', text } });
   }
 
-  /** Phát trọn 1 tool_use block. input là object đã dịch sang Claude Code. */
+  /** Phat tron 1 tool_use block. input la object da dich sang Claude Code. */
   toolUse(id, name, input) {
     this.start();
     this._closeBlock();
     this.index += 1;
     this._send('content_block_start', { type: 'content_block_start', index: this.index, content_block: { type: 'tool_use', id, name, input: {} } });
-    // BẮT BUỘC đánh dấu block đang mở, nếu không _closeBlock() bên dưới sẽ return sớm và
-    // BỎ content_block_stop → Claude Code coi tool_use là dở dang: "tool call could not be parsed".
+    // BAT BUOC danh dau block dang mo, neu khong _closeBlock() ben duoi se return som va
+    // BO content_block_stop -> Claude Code coi tool_use la do dang: "tool call could not be parsed".
     this.open = true; this.blockType = 'tool_use';
     const partial = JSON.stringify(input || {});
     this._send('content_block_delta', { type: 'content_block_delta', index: this.index, delta: { type: 'input_json_delta', partial_json: partial } });
@@ -122,7 +122,7 @@ export class AnthropicSSE {
     this._closeBlock();
   }
 
-  /** Kết thúc lượt: stop_reason ∈ 'end_turn' | 'tool_use' | 'max_tokens'. */
+  /** Ket thuc luot: stop_reason in 'end_turn' | 'tool_use' | 'max_tokens'. */
   finish(stopReason = 'end_turn') {
     this.start();
     this._closeBlock();
@@ -131,7 +131,7 @@ export class AnthropicSSE {
     this.stopped = true;
   }
 
-  /** Lỗi giữa stream (sau khi đã message_start). Nếu chưa start, gọi nơi khác trả HTTP JSON. */
+  /** Loi giua stream (sau khi da message_start). Neu chua start, goi noi khac tra HTTP JSON. */
   error(message, type = 'api_error') {
     this._send('error', { type: 'error', error: { type, message: String(message || 'error') } });
     this.stopped = true;

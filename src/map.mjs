@@ -1,22 +1,22 @@
 /**
- * TOOL + MODEL MAPPING — Postman native  ⇄  Claude Code (Anthropic wire).
+ * TOOL + MODEL MAPPING - Postman native  <->  Claude Code (Anthropic wire).
  *
- * SSoT của code cho tầng dịch tool. Tài liệu đối chiếu: docs/tool-mapping.md.
- * Ràng buộc gốc (tool-mapping.md §1): tool call trên wire LUÔN mang tên native của
- * Postman; proxy chỉ đổi tên + đổi tham số sang tên của Claude Code. Card chỉ "gợi ý",
- * KHÔNG cấp tool mới — nên card quảng cáo TÊN NATIVE, và mô tả môi trường ở thể khẳng
- * định, không đối đầu danh tính (tool-mapping.md §4).
+ * SSoT cua code cho tang dich tool. Tai lieu doi chieu: docs/tool-mapping.md.
+ * Rang buoc goc (tool-mapping.md #1): tool call tren wire LUON mang ten native cua
+ * Postman; proxy chi doi ten + doi tham so sang ten cua Claude Code. Card chi "goi y",
+ * KHONG cap tool moi - nen card quang cao TEN NATIVE, va mo ta moi truong o the khang
+ * dinh, khong doi dau danh tinh (tool-mapping.md #4).
  *
- * Ở "phương pháp Anthropic": CHÍNH Claude Code CLI chạy tool (Bash/Read/Write/Edit…),
- * proxy không chạy tool. Vì vậy module này chỉ DỊCH, không thực thi.
+ * O "phuong phap Anthropic": CHINH Claude Code CLI chay tool (Bash/Read/Write/Edit...),
+ * proxy khong chay tool. Vi vay module nay chi DICH, khong thuc thi.
  */
 
-export const QUERY_CAP = Number(process.env.PM_QUERY_CAP || 8500); // tool-mapping.md §7
+export const QUERY_CAP = Number(process.env.PM_QUERY_CAP || 8500); // tool-mapping.md #7
 
 // ---------------------------------------------------------------------------
-// pickArg — chuẩn hoá khoá (lowercase, bỏ ký tự không phải chữ/số) rồi mới tra alias.
-// filePath / file_path / File-Path → cùng một khoá. Schema native chưa được công bố,
-// nên phòng thủ theo *vai trò* thay vì liệt kê tay từng biến thể (tool-mapping.md §3).
+// pickArg - chuan hoa khoa (lowercase, bo ky tu khong phai chu/so) roi moi tra alias.
+// filePath / file_path / File-Path -> cung mot khoa. Schema native chua duoc cong bo,
+// nen phong thu theo *vai tro* thay vi liet ke tay tung bien the (tool-mapping.md #3).
 // ---------------------------------------------------------------------------
 const norm = (k) => String(k).toLowerCase().replace(/[^a-z0-9]/g, '');
 export function pickArg(args, ...aliases) {
@@ -30,12 +30,12 @@ export function pickArg(args, ...aliases) {
   return undefined;
 }
 
-// Bọc chuỗi cho shell (single-quote an toàn cho POSIX; Claude Code Bash chạy qua shell).
+// Boc chuoi cho shell (single-quote an toan cho POSIX; Claude Code Bash chay qua shell).
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 // ---------------------------------------------------------------------------
-// Bảng map: Postman native  →  Claude Code. (docs/tool-mapping.md §5)
-// Mỗi entry trả { name, input }.  Trả null nghĩa là "drop" (xử lý ở mapPostmanToolToClaude).
+// Bang map: Postman native  ->  Claude Code. (docs/tool-mapping.md #5)
+// Moi entry tra { name, input }.  Tra null nghia la "drop" (xu ly o mapPostmanToolToClaude).
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // CLIENT-AWARE tool-name adaptation. The gateway emits Claude-Code names; each
@@ -45,7 +45,7 @@ const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 // ---------------------------------------------------------------------------
 const CAP_EQUIV = {
   bash: ['Bash', 'exec', 'terminal', 'PowerShell', 'shell', 'sh'],
-  glob: ['Glob'], // dir_fetch/dir_list là paired-node (remote), KHÔNG phải lister local → không map glob vào đó
+  glob: ['Glob'], // dir_fetch/dir_list la paired-node (remote), KHONG phai lister local -> khong map glob vao do
   grep: ['Grep'],
   read: ['Read', 'read', 'read_file', 'file_read', 'cat'],
   write: ['Write', 'write', 'write_file', 'file_write', 'create_file'],
@@ -74,7 +74,7 @@ function adaptToClient(out, set) {
   }
   if (cap === 'glob') {
     if (target && target.toLowerCase() === 'glob') return { name: target, input };
-    // Không có Glob native local ⇒ rơi xuống shell. Sinh cú pháp đúng theo shell host (Win→PowerShell).
+    // Khong co Glob native local => roi xuong shell. Sinh cu phap dung theo shell host (Win->PowerShell).
     const sh = anyShell();
     if (sh) {
       const nm = String(input.pattern || '').replace(/\*\*\//g, '').replace(/^\*+|\*+$/g, '');
@@ -103,8 +103,8 @@ const TRANSLATORS = {
     if (!command) return null;
     const projectPath = pickArg(a, 'projectPath', 'cwd', 'directory', 'path');
     const description = pickArg(a, 'explanation', 'description');
-    // Claude Bash không nhận cwd → ghép cd (tool-mapping.md §3).
-    // Dùng ';' thay '&&': hoạt động cho cả bash lẫn PowerShell (PS 5.1 không nhận '&&').
+    // Claude Bash khong nhan cwd -> ghep cd (tool-mapping.md #3).
+    // Dung ';' thay '&&': hoat dong cho ca bash lan PowerShell (PS 5.1 khong nhan '&&').
     if (projectPath) command = `cd ${shq(projectPath)}; ${command}`;
     const input = { command };
     if (description) input.description = String(description);
@@ -116,8 +116,8 @@ const TRANSLATORS = {
   },
   searchInFiles(a) { return TRANSLATORS.searchFiles(a); },
   searchFiles(a) {
-    // Dùng tool NATIVE của Claude Code (Grep/Glob) thay vì `Bash rg`: Grep bọc ripgrep bundled
-    // sẵn trong Claude Code, không phụ thuộc `rg` trên PATH và không đi qua hook shell (rtk).
+    // Dung tool NATIVE cua Claude Code (Grep/Glob) thay vi `Bash rg`: Grep boc ripgrep bundled
+    // san trong Claude Code, khong phu thuoc `rg` tren PATH va khong di qua hook shell (rtk).
     const pattern = pickArg(a, 'queryString', 'query', 'pattern', 'regex')
       || (Array.isArray(pickArg(a, 'queryPatterns')) ? pickArg(a, 'queryPatterns')[0] : undefined);
     const path = pickArg(a, 'path', 'relativePath', 'directory');
@@ -128,8 +128,8 @@ const TRANSLATORS = {
       if (glob) input.glob = String(glob);
       return { name: 'Grep', input };
     }
-    if (glob) return { name: 'Glob', input: { pattern: String(glob) } }; // chỉ tìm theo tên file
-    return null; // thiếu cả pattern lẫn glob ⇒ drop
+    if (glob) return { name: 'Glob', input: { pattern: String(glob) } }; // chi tim theo ten file
+    return null; // thieu ca pattern lan glob => drop
   },
   readFile(a) {
     const file_path = pickArg(a, 'filePath', 'path', 'file');
@@ -171,14 +171,14 @@ const TRANSLATORS = {
     return { name: 'WebSearch', input: { query: String(query) } };
   },
   askUser(a) {
-    // Postman phát 1 trong 2 shape:
-    //   (cũ/số ít)  { question, options }
-    //   (mới/số nhiều) { questions: [{ id, message, options, header?, ... }] }
-    // options: string[] hoặc {label,value}[]. AskUserQuestion đòi questions[].options là
-    // {label} và KHÔNG rỗng → tự chèn Yes/No khi thiếu.
-    // AskUserQuestion (Claude Code) BẮT BUỘC: questions[].header là string, và MỌI
-    // options[].description là string. Thiếu → InputValidationError "expected string but
-    // provided unknown". Vì vậy LUÔN set cả hai (mặc định '') dù gateway không cung cấp.
+    // Postman phat 1 trong 2 shape:
+    //   (cu/so it)  { question, options }
+    //   (moi/so nhieu) { questions: [{ id, message, options, header?, ... }] }
+    // options: string[] hoac {label,value}[]. AskUserQuestion doi questions[].options la
+    // {label} va KHONG rong -> tu chen Yes/No khi thieu.
+    // AskUserQuestion (Claude Code) BAT BUOC: questions[].header la string, va MOI
+    // options[].description la string. Thieu -> InputValidationError "expected string but
+    // provided unknown". Vi vay LUON set ca hai (mac dinh '') du gateway khong cung cap.
     const toOptions = (rawOptions) => {
       let options = [];
       if (Array.isArray(rawOptions)) {
@@ -194,43 +194,43 @@ const TRANSLATORS = {
       if (!options.length) options = [{ label: 'Yes', description: '' }, { label: 'No', description: '' }];
       return options;
     };
-    // AskUserQuestion: options mỗi câu phải 2..4 phần tử (minItems:2, maxItems:4). Gateway có thể
-    // phát >4 → giữ 3 đầu + gộp phần dư vào 1 option "Lựa chọn khác…" (không mất thông tin, hợp lệ).
-    // Thiếu (<2) → chèn thêm để đủ tối thiểu 2.
+    // AskUserQuestion: options moi cau phai 2..4 phan tu (minItems:2, maxItems:4). Gateway co the
+    // phat >4 -> giu 3 dau + gop phan du vao 1 option "Lua chon khac..." (khong mat thong tin, hop le).
+    // Thieu (<2) -> chen them de du toi thieu 2.
     const capOptions = (options) => {
       if (options.length > 4) {
         const kept = options.slice(0, 3);
         const restLabels = options.slice(3).map((o) => o.label);
-        kept.push({ label: 'Lựa chọn khác…', description: ('Gồm: ' + restLabels.join(' | ')).slice(0, 500) });
+        kept.push({ label: 'Lua chon khac...', description: ('Gom: ' + restLabels.join(' | ')).slice(0, 500) });
         options = kept;
       }
-      while (options.length < 2) options.push({ label: options.length ? 'Huỷ' : 'Yes', description: '' });
+      while (options.length < 2) options.push({ label: options.length ? 'Huy' : 'Yes', description: '' });
       return options;
     };
     const buildQ = (src) => {
       const question = pickArg(src, 'question', 'prompt', 'message', 'text');
       if (!question) return null;
       const rawHeader = pickArg(src, 'header', 'title', 'category');
-      const header = String(rawHeader || question).trim().slice(0, 40) || 'Chọn';
+      const header = String(rawHeader || question).trim().slice(0, 40) || 'Chon';
       return { header, question: String(question), multiSelect: !!pickArg(src, 'multiSelect', 'multiselect'), options: capOptions(toOptions(pickArg(src, 'options', 'choices'))) };
     };
 
-    // Shape số nhiều: { questions: [...] } — AskUserQuestion cho tối đa 4 câu hỏi.
+    // Shape so nhieu: { questions: [...] } - AskUserQuestion cho toi da 4 cau hoi.
     const rawQuestions = pickArg(a, 'questions');
     if (Array.isArray(rawQuestions) && rawQuestions.length) {
       const questions = rawQuestions.map(buildQ).filter(Boolean).slice(0, 4);
       if (questions.length) return { name: 'AskUserQuestion', input: { questions } };
     }
 
-    // Shape số ít: { question, options }
+    // Shape so it: { question, options }
     const q = buildQ(a);
     if (!q) return null;
     return { name: 'AskUserQuestion', input: { questions: [q] } };
   },
 };
 
-// Claude Code tool  →  các tên native Postman mà nó "phủ" được.
-// Dùng để (a) lọc card, (b) tính excludedTools cho gateway.
+// Claude Code tool  ->  cac ten native Postman ma no "phu" duoc.
+// Dung de (a) loc card, (b) tinh excludedTools cho gateway.
 // ---------------------------------------------------------------------------
 // MCP filesystem/shell tools (names like "<server>__local__<action>", e.g.
 // aki-mcp-sv__local__find_path). The Postman gateway can offer these when the
@@ -296,21 +296,21 @@ export const CLAUDE_TO_NATIVES = {
   askuserquestion: ['askUser'],
 };
 
-// Mọi native Postman ta biết cách dịch (dùng để tính excludedTools).
+// Moi native Postman ta biet cach dich (dung de tinh excludedTools).
 export const MAPPABLE_NATIVES = [
   'executeShellCommand', 'listDirectory', 'searchFiles', 'searchInFiles',
   'readFile', 'createFile', 'writeFile', 'editFile', 'fetchUrl', 'webSearch', 'askUser',
 ];
 
-// Native không bao giờ có đường về Claude Code → luôn loại khỏi gateway khi có thể
-// (tool-mapping.md §5/§6). Nếu vẫn lọt, runtime sẽ tự trả TOOL_RESPONSE (xem server).
+// Native khong bao gio co duong ve Claude Code -> luon loai khoi gateway khi co the
+// (tool-mapping.md #5/#6). Neu van lot, runtime se tu tra TOOL_RESPONSE (xem server).
 export const ALWAYS_EXCLUDE = [
   'navigateInApp', 'linkToLocalDirectory', 'todoWrite', 'recommendNextActions',
   'getTabDetails', 'searchPostman', 'learnAboutPostmanTerm', 'searchConversationData',
   'SubAgent', 'getVariables', 'getSharedVariables', 'sendRequest', 'showRichOutput',
 ];
 
-/** Tập tên Claude Code mà client khai, chuẩn hoá lowercase. */
+/** Tap ten Claude Code ma client khai, chuan hoa lowercase. */
 export function claudeToolSet(tools) {
   const s = new Set();
   for (const t of tools || []) {
@@ -320,7 +320,7 @@ export function claudeToolSet(tools) {
   return s;
 }
 
-/** Các native Postman NÊN giữ, dựa trên bộ tool Claude Code khai. */
+/** Cac native Postman NEN giu, dua tren bo tool Claude Code khai. */
 export function nativesToKeep(claudeToolNames) {
   const keep = new Set();
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
@@ -330,24 +330,24 @@ export function nativesToKeep(claudeToolNames) {
   return keep;
 }
 
-/** Danh sách excludedTools gửi lên gateway: native không map được + native client không khai.
- *  Lưu ý: template đã harvest có thể sẵn chứa native ta MUỐN giữ (vd 'askUser' bị Postman
- *  Desktop tự loại). Vì vậy phải BỎ khỏi excluded mọi native nằm trong `keep` — nếu không
- *  askUser sẽ mãi bị loại và gateway không bao giờ phát menu chọn option. */
+/** Danh sach excludedTools gui len gateway: native khong map duoc + native client khong khai.
+ *  Luu y: template da harvest co the san chua native ta MUON giu (vd 'askUser' bi Postman
+ *  Desktop tu loai). Vi vay phai BO khoi excluded moi native nam trong `keep` - neu khong
+ *  askUser se mai bi loai va gateway khong bao gio phat menu chon option. */
 export function excludedToolsFor(claudeToolNames, templateExcluded = []) {
   const keep = nativesToKeep(claudeToolNames);
   const excl = new Set(templateExcluded);
-  for (const n of keep) excl.delete(n);                    // ép GIỮ native client thực sự khai
+  for (const n of keep) excl.delete(n);                    // ep GIU native client thuc su khai
   for (const n of MAPPABLE_NATIVES) if (!keep.has(n)) excl.add(n);
   for (const n of ALWAYS_EXCLUDE) excl.add(n);
   return [...excl];
 }
 
 /**
- * Dịch 1 tool call của Postman sang Claude Code.
+ * Dich 1 tool call cua Postman sang Claude Code.
  * @returns
- *   { kind:'client', name, input }              → phát tool_use cho Claude Code chạy
- *   { kind:'drop', reason, syntheticResult }    → proxy tự trả TOOL_RESPONSE, gateway chạy tiếp
+ *   { kind:'client', name, input }              -> phat tool_use cho Claude Code chay
+ *   { kind:'drop', reason, syntheticResult }    -> proxy tu tra TOOL_RESPONSE, gateway chay tiep
  */
 export function mapPostmanToolToClaude(nativeName, rawArgs, claudeToolNames) {
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
@@ -361,25 +361,25 @@ export function mapPostmanToolToClaude(nativeName, rawArgs, claudeToolNames) {
   const fn = TRANSLATORS[nativeName];
   if (fn) {
     const out = adaptToClient(fn(rawArgs || {}), set);
-    if (!out) return { kind: 'drop', reason: `Thiếu tham số bắt buộc cho ${nativeName}`, syntheticResult: `[proxy] Bỏ qua ${nativeName}: thiếu tham số bắt buộc.` };
+    if (!out) return { kind: 'drop', reason: `Thieu tham so bat buoc cho ${nativeName}`, syntheticResult: `[proxy] Bo qua ${nativeName}: thieu tham so bat buoc.` };
     if (!set.has(out.name.toLowerCase())) {
-      return { kind: 'drop', reason: `Client không khai tool ${out.name}`, syntheticResult: `[proxy] Bỏ qua ${nativeName}: client Claude Code không bật ${out.name}.` };
+      return { kind: 'drop', reason: `Client khong khai tool ${out.name}`, syntheticResult: `[proxy] Bo qua ${nativeName}: client Claude Code khong bat ${out.name}.` };
     }
     return { kind: 'client', name: out.name, input: out.input };
   }
-  // Không có translator → drop, nhưng vẫn trả kết quả để gateway không treo.
-  return { kind: 'drop', reason: `Không có ánh xạ cho ${nativeName}`, syntheticResult: `[proxy] Bỏ qua tool ${nativeName}: không có tương đương trong Claude Code.` };
+  // Khong co translator -> drop, nhung van tra ket qua de gateway khong treo.
+  return { kind: 'drop', reason: `Khong co anh xa cho ${nativeName}`, syntheticResult: `[proxy] Bo qua tool ${nativeName}: khong co tuong duong trong Claude Code.` };
 }
 
 // ---------------------------------------------------------------------------
-// CONFORM tới SCHEMA client — sửa lỗi "Validation failed for tool read: must have
-// required property path". Translator phát khoá canonical của Claude Code gốc
-// (readFile → Read {file_path}); nhưng client có thể là harness/MCP khác, tool đọc
-// dùng {path} thay vì {file_path}. Thay vì hard-code/đoán, đọc body.tools[].input_schema
-// và tự đổi tên tool + khoá tham số sang đúng cái client khai. Không có schema ⇒ giữ
-// nguyên (hành vi cũ). (docs/tool-mapping.md §3 — phòng thủ theo *vai trò*)
+// CONFORM toi SCHEMA client - sua loi "Validation failed for tool read: must have
+// required property path". Translator phat khoa canonical cua Claude Code goc
+// (readFile -> Read {file_path}); nhung client co the la harness/MCP khac, tool doc
+// dung {path} thay vi {file_path}. Thay vi hard-code/doan, doc body.tools[].input_schema
+// va tu doi ten tool + khoa tham so sang dung cai client khai. Khong co schema => giu
+// nguyen (hanh vi cu). (docs/tool-mapping.md #3 - phong thu theo *vai tro*)
 // ---------------------------------------------------------------------------
-// Nhóm khoá ĐỒNG NGHĨA (cùng vai trò) giữa các biến thể schema tool file.
+// Nhom khoa DONG NGHIA (cung vai tro) giua cac bien the schema tool file.
 const PARAM_ALIASES = [
   ['file_path', 'path', 'filePath', 'filepath', 'absolute_path', 'dir', 'directory'],
   ['command', 'cmd', 'script', 'code'],
@@ -395,19 +395,19 @@ function toolDefFor(toolDefs, toolName) {
   return toolDefs.find((t) => t && typeof t.name === 'string' && t.name.toLowerCase() === lc) || null;
 }
 
-/** Tên tool đúng casing client khai (client có thể dùng 'read' thay vì 'Read'). */
+/** Ten tool dung casing client khai (client co the dung 'read' thay vi 'Read'). */
 export function conformToolName(toolName, toolDefs) {
   const t = toolDefFor(toolDefs, toolName);
   return t && t.name ? t.name : toolName;
 }
 
-/** Đổi khoá input cho khớp input_schema client khai (file_path ⇄ path…). Không rõ schema ⇒ giữ nguyên. */
+/** Doi khoa input cho khop input_schema client khai (file_path <-> path...). Khong ro schema => giu nguyen. */
 export function conformInputToSchema(toolName, input, toolDefs) {
   if (!input || typeof input !== 'object') return input;
   const t = toolDefFor(toolDefs, toolName);
   const schema = t && (t.input_schema || t.inputSchema || t.schema);
   const props = schema && schema.properties;
-  if (!props || typeof props !== 'object') return input;   // không có schema → giữ như cũ
+  if (!props || typeof props !== 'object') return input;   // khong co schema -> giu nhu cu
   // Array-style edit tools: some clients (e.g. openclaw) declare the edit tool as
   //   { path, edits: [ { oldText, newText } ] }  instead of flat { old_string, new_string }.
   // The rename loop below only renames flat keys, so it cannot pack them into the array and
@@ -442,40 +442,40 @@ export function conformInputToSchema(toolName, input, toolDefs) {
   }
   const out = {};
   for (const [k, v] of Object.entries(input)) {
-    if (props[k] !== undefined) { out[k] = v; continue; }   // schema chấp nhận đúng khoá này
+    if (props[k] !== undefined) { out[k] = v; continue; }   // schema chap nhan dung khoa nay
     const group = PARAM_ALIASES.find((g) => g.includes(k));
     const alt = group && group.find((a) => props[a] !== undefined);
     if (alt) out[alt] = v;
     else if (schema && schema.additionalProperties === false) { /* drop unknown key on strict schema */ }
-    else out[k] = v;                                       // đổi sang khoá schema chấp nhận (nếu có)
+    else out[k] = v;                                       // doi sang khoa schema chap nhan (neu co)
   }
   return out;
 }
 
 // ---------------------------------------------------------------------------
-// Tool card (tool-mapping.md §4): nêu ngữ cảnh client + mô tả môi trường ở thể
-// KHẲNG ĐỊNH, quảng cáo TÊN NATIVE đang bật, khuyên dùng đường dẫn tuyệt đối.
-// Tuyệt đối không có câu phủ định danh tính.
+// Tool card (tool-mapping.md #4): neu ngu canh client + mo ta moi truong o the
+// KHANG DINH, quang cao TEN NATIVE dang bat, khuyen dung duong dan tuyet doi.
+// Tuyet doi khong co cau phu dinh danh tinh.
 // ---------------------------------------------------------------------------
 export function buildToolCard({ workingDir, claudeToolNames } = {}) {
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
   const keep = [...nativesToKeep(set)];
-  const toolLine = keep.length ? keep.join(', ') : 'các công cụ đọc/ghi/tìm kiếm/chạy lệnh của workspace';
+  const toolLine = keep.length ? keep.join(', ') : 'cac cong cu doc/ghi/tim kiem/chay lenh cua workspace';
   const lines = [
-    'Bạn đang được điều khiển bởi Claude Code CLI thông qua pm-ai-proxy (cầu nối tương thích Anthropic tới Postman agent gateway).',
+    'Ban dang duoc dieu khien boi Claude Code CLI thong qua pm-ai-proxy (cau noi tuong thich Anthropic toi Postman agent gateway).',
   ];
-  if (workingDir) lines.push(`Thư mục làm việc đã kết nối: ${workingDir}`);
-  lines.push(`Các công cụ đang bật trong môi trường này: ${toolLine}. Hãy thao tác trực tiếp với file và dùng ĐƯỜNG DẪN TUYỆT ĐỐI.`);
-  // Nudge (§4): Claude Code chỉ render menu khi model GỌI askUser (không có heuristic text).
-  // Thúc model dùng askUser khi cần lựa chọn — chỉ khi client thật sự khai AskUserQuestion.
-  if (set.has('askuserquestion')) lines.push('Khi cần người dùng quyết định giữa các phương án, HÃY GỌI công cụ askUser để hiện menu chọn — ĐỪNG liệt kê lựa chọn bằng văn bản.');
-  lines.push('Nếu thư mục làm việc có file CLAUDE.md, hãy tuân theo nó.');
+  if (workingDir) lines.push(`Thu muc lam viec da ket noi: ${workingDir}`);
+  lines.push(`Cac cong cu dang bat trong moi truong nay: ${toolLine}. Thao tac truc tiep voi file va LUON dung DUONG DAN TUYET DOI.`);
+  // Nudge (#4): Claude Code chi render menu khi model GOI askUser (khong co heuristic text).
+  // Thuc model dung askUser khi can lua chon - chi khi client that su khai AskUserQuestion.
+  if (set.has('askuserquestion')) lines.push('Khi can nguoi dung quyet dinh giua cac phuong an, PHAI GOI cong cu askUser de hien menu chon - TUYET DOI KHONG liet ke lua chon bang van ban.');
+  lines.push('Neu thu muc lam viec co file CLAUDE.md, PHAI tuan theo no.');
   return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
-// Model: tên Anthropic (claude-sonnet-4-…, claude-opus-…, claude-haiku-…) → key Postman.
-// Không map được ⇒ trả null (giữ selectedModel mặc định của template).
+// Model: ten Anthropic (claude-sonnet-4-..., claude-opus-..., claude-haiku-...) -> key Postman.
+// Khong map duoc => tra null (giu selectedModel mac dinh cua template).
 // ---------------------------------------------------------------------------
 export function mapModel(anthropicModel, postmanModelKeys = []) {
   if (process.env.PM_FORCE_MODEL) return process.env.PM_FORCE_MODEL;
@@ -486,7 +486,7 @@ export function mapModel(anthropicModel, postmanModelKeys = []) {
   else if (m.includes('sonnet')) tier = 'SONNET';
   if (!tier) return null;
   const keys = postmanModelKeys.map((k) => (typeof k === 'string' ? k : k && k.key)).filter(Boolean);
-  // Ưu tiên key chứa đúng tier; trong đó ưu tiên bản có số version cao nhất (sort giảm dần theo chuỗi).
+  // Uu tien key chua dung tier; trong do uu tien ban co so version cao nhat (sort giam dan theo chuoi).
   const hit = keys.filter((k) => k.toUpperCase().includes(tier)).sort().reverse()[0];
   return hit || null;
 }

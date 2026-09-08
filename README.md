@@ -44,6 +44,19 @@ cd C:\Users\Win10\Desktop\Workspace\pm-proxy
 start-proxy.bat
 ```
 
+Toàn bộ thao tác đi qua **một file duy nhất** ở thư mục gốc:
+
+| Windows | Linux / macOS / Git Bash | Việc |
+|---|---|---|
+| `start-proxy.bat` | `./start-proxy.sh` | harvest + khởi động proxy |
+| `start-proxy.bat noharvest` | `./start-proxy.sh noharvest` | khởi động, bỏ qua harvest |
+| `start-proxy.bat restart [nodebug]` | `./start-proxy.sh restart [nodebug]` | kill cổng + khởi động lại |
+| `start-proxy.bat claude [args]` | `./start-proxy.sh claude [args]` | chạy Claude Code trỏ vào proxy |
+| `start-proxy.bat help` | `./start-proxy.sh help` | in bảng này |
+
+Hai file cùng bộ lệnh, khác nhau ở chỗ `.bat` tự cài Node qua `winget`, còn `.sh`
+chỉ in hướng dẫn cài (`brew` / `apt` / `nvm`) vì việc cài trên Linux/macOS cần `sudo`.
+
 Script này tự động: kiểm tra/cài Node → **harvest** token + chat-template từ Postman Desktop (tối đa ~30s) → khởi động proxy trên cổng `8788`.
 
 Bỏ qua bước harvest (dùng cache lần trước):
@@ -56,8 +69,8 @@ start-proxy.bat noharvest
 
 ```bat
 cd C:\Users\Win10\Desktop\Workspace\pm-proxy
-node harvest.mjs --timeout=30
-node claude-proxy.mjs
+node src\harvest.mjs --timeout=30
+node src\claude-proxy.mjs
 ```
 
 hoặc qua npm script:
@@ -80,24 +93,51 @@ Kết quả mong đợi — cả `token` và `template` phải là `true`:
 
 ---
 
+## 2b. Chạy trên Linux / macOS
+
+Proxy là Node thuần nên **chạy được**; phần sinh lệnh shell trong `map.mjs` đã có sẵn
+nhánh POSIX (`find` / `ls` / `grep`) chọn theo `process.platform`.
+
+Nhưng **`harvest.mjs` chỉ chạy trên Windows** — nó dò cổng CDP của Postman Desktop bằng
+PowerShell (`Get-Process`, `Get-NetTCPConnection`). Trên Linux/macOS `start-proxy.sh` sẽ
+bỏ qua bước harvest và báo rõ. Cách dùng:
+
+1. Harvest trên một máy Windows có Postman Desktop (`start-proxy.bat`).
+2. Chép 2 file sang máy Linux/macOS:
+   - `~/.postman-agent-cli/token`
+   - `<repo>/src/.chat-template.json`
+3. `./start-proxy.sh noharvest`
+
+Script tự kiểm tra và báo nếu thiếu file nào. Token Postman có hạn nên phải harvest lại
+định kỳ trên máy Windows.
+
+---
+
 ## 3. Restart
 
 ```bat
-restart-proxy.bat            :: tự kill tiến trình đang giữ cổng, bật DEBUG_PROXY
-restart-proxy.bat nodebug    :: tắt log debug
+start-proxy.bat restart            :: tự kill tiến trình đang giữ cổng, bật DEBUG_PROXY
+start-proxy.bat restart nodebug    :: tắt log debug
 ```
 
-> **Lưu ý:** nếu proxy cũ được khởi động ở **quyền Administrator**, cửa sổ thường không kill được nó (`Access is denied`). Hãy mở `restart-proxy.bat` **bằng quyền Administrator** (chuột phải → Run as administrator).
+> **Lưu ý:** nếu proxy cũ được khởi động ở **quyền Administrator**, cửa sổ thường không kill được nó (`Access is denied`). Hãy mở `start-proxy.bat restart` **bằng quyền Administrator** (chuột phải → Run as administrator).
 
 ---
 
 ## 4. Trỏ client vào proxy
 
-### Cách A — dùng sẵn `claude-pm.bat`
+### Cách A — dùng sẵn `start-proxy.bat claude`
 
 ```bat
 cd C:\du-an-cua-ban
-C:\Users\Win10\Desktop\Workspace\pm-proxy\claude-pm.bat
+C:\Users\Win10\Desktop\Workspace\pm-proxy\start-proxy.bat claude
+```
+
+Trên Linux/macOS:
+
+```sh
+cd ~/du-an-cua-ban
+~/pm-proxy/start-proxy.sh claude
 ```
 
 File này set sẵn:
@@ -222,7 +262,7 @@ Khi gateway phát tool tên `mcp__*`, proxy **không** chuyển cho client mà t
 ### 6.4 Kiểm tra nhanh
 
 ```bat
-node -e "import('./mcp.mjs').then(async m=>{const r=await m.listMcpTools();console.log(r.tools.map(t=>t.name));console.log('errors:',r.errors)})"
+node -e "import('./src/mcp.mjs').then(async m=>{const r=await m.listMcpTools();console.log(r.tools.map(t=>t.name));console.log('errors:',r.errors)})"
 ```
 
 Bật `DEBUG_PROXY=1` sẽ thấy dòng `[pm-proxy:dbg] mcp thirdParty warmed: fs,chrome-devtools` (hoặc `(none)` khi chưa cấu hình server nào).
@@ -265,7 +305,7 @@ Bật `DEBUG_PROXY=1` sẽ thấy dòng `[pm-proxy:dbg] mcp thirdParty warmed: f
 
 ### Log debug trực tiếp
 
-Chạy `restart-proxy.bat` (DEBUG bật sẵn), mỗi lượt sẽ in:
+Chạy `start-proxy.bat restart` (DEBUG bật sẵn), mỗi lượt sẽ in:
 
 ```
 [pm-proxy:dbg] mcp thirdParty warmed: fs,chrome-devtools
@@ -292,8 +332,8 @@ Nằm tại `%USERPROFILE%\.postman-agent-cli\`:
 ### Chạy test
 
 ```bat
-node selftest.mjs      :: hoặc: npm start:test
-node nova-verify.mjs
+node src\selftest.mjs      :: hoặc: npm test
+node src\nova-verify.mjs
 ```
 
 ---
@@ -303,15 +343,15 @@ node nova-verify.mjs
 | Triệu chứng | Nguyên nhân & cách xử lý |
 |---|---|
 | `EADDRINUSE ... :8788` | Proxy đã chạy sẵn. Không cần chạy lại, hoặc đổi cổng: `set PM_ANTHROPIC_PORT=9000`. |
-| HTTP **401** "Chưa có Postman token" | Chưa harvest. Mở Postman Desktop rồi chạy `node harvest.mjs`. |
+| HTTP **401** "Chưa có Postman token" | Chưa harvest. Mở Postman Desktop rồi chạy `node src\harvest.mjs`. |
 | HTTP **503** "Chưa có chat template" | Chat thử 1 câu trong Postman Agent Mode rồi harvest lại. |
-| `taskkill` báo `Access is denied` | Proxy đang chạy quyền admin → mở `restart-proxy.bat` bằng Run as administrator. |
+| `taskkill` báo `Access is denied` | Proxy đang chạy quyền admin → mở `start-proxy.bat restart` bằng Run as administrator. |
 | Model khai **sai thư mục dự án** | cwd không tới được proxy. Xem mục 5: gửi header `x-pm-working-dir`, hoặc để probe tự hỏi. |
 | Model **không thấy tool MCP** | Kiểm tra `mcp.json` (hoặc `openclaw.json`) có `servers`; xem log `mcp thirdParty warmed`. Danh sách cache 5 phút — đổi config thì khởi động lại proxy. |
 | Tool MCP trả `[mcp error] …` | Server MCP không khởi động được: soi `command`/`args`/`url`. Chạy lệnh ở mục 6.4 để xem `errors[]`. |
 | `chrome-devtools` báo không nối được Chrome | Proxy tự thử `openclaw browser start`; vẫn lỗi thì chạy tay lệnh đó rồi hỏi lại. |
 | Model dùng **cwd cũ** sau khi đổi thư mục | Phiên đã cache cwd. Mở hội thoại mới, hoặc xoá `.claude-sessions.json` (mục 5). |
-| Harvest thất bại | Postman Desktop chưa mở / chưa đăng nhập. Thử `node harvest.mjs --watch`. |
+| Harvest thất bại | Postman Desktop chưa mở / chưa đăng nhập. Thử `node src\harvest.mjs --watch`. |
 
 ---
 
@@ -319,25 +359,27 @@ node nova-verify.mjs
 
 ```
 pm-proxy/
-├── claude-proxy.mjs          launcher gọn (startServer)
-├── server.mjs                HTTP server + vòng đời một lượt (cwd, probe, MCP, gateway)
-├── harvest.mjs               lấy token + chat-template từ Postman Desktop
-├── core.mjs                  token/template, buildBody, listModels, GATEWAY
-├── session.mjs               applySession: workspace + FILE_VIEWER_FOLDER
-├── tools.mjs                 runTool/summarizeTool (bash, file, MCP passthrough)
-├── mcp.mjs                   MCP host: kết nối stdio/http, tools/list, tools/call
-├── map.mjs                   map tool Postman ⇄ Claude Code, map model
-├── translate.mjs             phân tích request Anthropic, gom tool_result
-├── sse.mjs                   phát SSE đúng chuẩn Anthropic
-├── sessions.mjs              lưu phiên, cwd đã học, tool_use_id, pending
-├── capture.mjs               ghi log chẩn đoán
-├── selftest.mjs              39 test
-├── nova-verify.mjs           5 test mapping
+├── start-proxy.bat           ĐIỂM VÀO cho Windows (start / restart / claude)
+├── start-proxy.sh            ĐIỂM VÀO cho Linux / macOS / Git Bash
+├── .gitattributes            khoá eol: .sh = LF, .bat = CRLF
 ├── package.json              type: module + puppeteer-core
-├── start-proxy.bat           harvest + khởi động
-├── restart-proxy.bat         kill cổng + khởi động lại (DEBUG)
-├── claude-pm.bat             chạy Claude Code trỏ vào proxy
-└── .chat-template.json       template đã harvest (sinh ra, không commit)
+├── README.md
+└── src/
+    ├── claude-proxy.mjs      launcher gọn (startServer)
+    ├── server.mjs            HTTP server + vòng đời một lượt (cwd, probe, MCP, gateway)
+    ├── harvest.mjs           lấy token + chat-template từ Postman Desktop
+    ├── core.mjs              token/template, buildBody, listModels, GATEWAY
+    ├── session.mjs           applySession: workspace + FILE_VIEWER_FOLDER
+    ├── tools.mjs             runTool/summarizeTool (bash, file, MCP passthrough)
+    ├── mcp.mjs               MCP host: kết nối stdio/http, tools/list, tools/call
+    ├── map.mjs               map tool Postman ⇄ Claude Code, map model
+    ├── translate.mjs         phân tích request Anthropic, gom tool_result
+    ├── sse.mjs               phát SSE đúng chuẩn Anthropic
+    ├── sessions.mjs          lưu phiên, cwd đã học, tool_use_id, pending
+    ├── capture.mjs           ghi log chẩn đoán
+    ├── selftest.mjs          39 test
+    ├── nova-verify.mjs       5 test mapping
+    └── .chat-template.json   template đã harvest (sinh ra, không commit)
 ```
 
 Repo này **chạy độc lập** — không cần thư mục `PostmanTool`. Lần đầu clone về máy mới:
