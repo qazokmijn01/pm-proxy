@@ -118,24 +118,29 @@ pids_on_port() {
 }
 
 kill_port() {
-  say "Tim tien trinh dang giu cong $PORT ..."
-  local pids killed=0 pid
-  pids="$(pids_on_port || true)"
-  for pid in $pids; do
-    case "$pid" in ''|*[!0-9]*) continue ;; esac   # bo qua thu khong phai so
-    echo "  -> kill PID $pid"
-    if kill -9 "$pid" 2>/dev/null || taskkill //PID "$pid" //F >/dev/null 2>&1; then
-      killed=1
-    else
-      echo "     (KHONG kill duoc PID $pid - co the can quyen cao hon)"
+  # Nha cong $PORT: kill tien trinh dang LISTEN roi XAC NHAN da nha (thu toi da 5 lan).
+  # Dung o CA 'start' lan 'restart' -> khong bao gio EADDRINUSE / phai kill tay.
+  say "Kiem tra & nha cong $PORT neu dang bi giu ..."
+  local tries=0 pids pid
+  while : ; do
+    pids="$(pids_on_port 2>/dev/null | tr -s ' \t' '\n' | grep -E '^[0-9]+$' | sort -u)"
+    if [ -z "$pids" ]; then
+      if [ "$tries" -gt 0 ]; then say "Da nha cong $PORT."; else say "Cong $PORT dang trong."; fi
+      return 0
     fi
-  done
-  if [ "$killed" = "1" ]; then
-    say "Da dung instance cu. Cho 1s..."
+    tries=$((tries + 1))
+    if [ "$tries" -gt 5 ]; then
+      say "CANH BAO: van khong nha duoc cong $PORT (PID: $(echo $pids | tr '\n' ' '))"
+      echo "  - Tien trinh giu cong co the can quyen cao hon (sudo / Run as administrator)."
+      echo "  - Hoac dung cong khac:  PM_ANTHROPIC_PORT=9000 ./start-proxy.sh"
+      return 1
+    fi
+    for pid in $pids; do
+      echo "  -> kill PID $pid (lan $tries)"
+      kill -9 "$pid" 2>/dev/null || taskkill //PID "$pid" //F //T >/dev/null 2>&1 || true
+    done
     sleep 1
-  else
-    say "Khong co instance nao dang chay."
-  fi
+  done
 }
 
 run_proxy() {
@@ -194,6 +199,7 @@ case "$MODE" in
 
   start)
     ensure_node || exit 1
+    kill_port || true
     if [ "$SUB" = "noharvest" ]; then
       say "Bo qua harvest - dung token/template da cache."
     else

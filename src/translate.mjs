@@ -97,6 +97,46 @@ export function extractUserQuery(messages) {
   return contentText(lu && lu.content).trim();
 }
 
+/**
+ * KHOI PHUC NGU CANH khi MAT SESSION. Anthropic STATELESS: client gui lai TOAN BO lich su moi
+ * luot, nen ngay ca khi proxy mat conversationId (restart / cache bi xoa/hong) ta van dung lai
+ * duoc mot ban transcript gon tu messages[] de "mo lai" hoi thoai tren gateway.
+ *  - assistant text + [goi tool <ten>]
+ *  - user text + [ket qua tool: <tom tat>]
+ *  - boc <system-reminder>, giu phan CUOI (gan nhat) trong `budget` ky tu.
+ */
+export function rebuildTranscript(messages, budget = 6000) {
+  const lines = [];
+  for (const m of messages || []) {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
+    const c = m.content;
+    const parts = [];
+    if (typeof c === 'string') { const s = stripReminders(c); if (s) parts.push(s); }
+    else if (Array.isArray(c)) {
+      for (const b of c) {
+        if (typeof b === 'string') { const s = stripReminders(b); if (s) parts.push(s); continue; }
+        if (!b || typeof b !== 'object') continue;
+        if (b.type === 'text' && typeof b.text === 'string') { const s = stripReminders(b.text); if (s) parts.push(s); }
+        else if (b.type === 'tool_use') parts.push('[goi tool ' + (b.name || '?') + ']');
+        else if (b.type === 'tool_result') parts.push('[ket qua tool: ' + summarize(toolResultToString(b.content)) + ']');
+      }
+    }
+    const t = parts.join('\n').trim();
+    if (t) lines.push((m.role === 'assistant' ? '[Tro ly] ' : '[Nguoi dung] ') + t);
+  }
+  let out = lines.join('\n');
+  if (budget > 0 && out.length > budget) out = '...(luoc bot phan dau)...\n' + out.slice(out.length - budget);
+  return out;
+}
+
+/** Phan lich su TRUOC luot hien tai: cac message toi (va gom) assistant cuoi cung. */
+export function priorMessages(messages) {
+  const arr = Array.isArray(messages) ? messages : [];
+  let end = 0;
+  for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] && arr[i].role === 'assistant') { end = i + 1; break; } }
+  return arr.slice(0, end);
+}
+
 // Claude Code mo dau bang cac luot NEN khong can gateway: sinh tieu de hoi thoai,
 // do quota... (thuong toolCount=0). Dung dot credit + dung tao conversation rac cho chung.
 export function isUtilityTurn(body) {

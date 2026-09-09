@@ -14,9 +14,10 @@ import {
   conformToolName, conformInputToSchema,
 } from './map.mjs';
 import { AnthropicSSE } from './sse.mjs';
-import { analyzeRequest, buildToolResponses, extractAskUserAnswer } from './translate.mjs';
-import { runGateway, thinkingFlag, prepBody, BufferEmitter } from './server.mjs';
+import { analyzeRequest, buildToolResponses, extractAskUserAnswer, rebuildTranscript, priorMessages } from './translate.mjs';
+import { runGateway, runGatewayResilient, thinkingFlag, prepBody, BufferEmitter } from './server.mjs';
 import { loadTemplate } from './core.mjs';
+import { recordToolUse, getToolUse } from './sessions.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); console.log('  [v]', name); pass++; } catch (e) { console.log('  [x]', name, '->', e.message); fail++; } };
@@ -408,6 +409,107 @@ await okAsync('gateway phat askUser (client co AskUserQuestion) => proxy phat to
     assert.equal(tu.input.questions[0].question, 'Sep chon DB nao?');
     const labels = tu.input.questions[0].options.map((o) => o.label);
     assert.deepEqual(labels, ['Postgres', 'MySQL'], 'giu dung options lam label');
+  } finally { globalThis.fetch = orig; }
+});
+
+console.log('\n# Khoi phuc ngu canh khi mat session (rebuildTranscript / priorMessages)');
+const CONVO = [
+  { role: 'user', content: 'Chao, giup toi sua proxy' },
+  { role: 'assistant', content: [ { type: 'text', text: 'Duoc, de toi doc file' }, { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: '/a' } } ] },
+  { role: 'user', content: [ { type: 'tool_result', tool_use_id: 'toolu_1', content: 'noi dung file A' } ] },
+  { role: 'assistant', content: [ { type: 'text', text: 'Da xong buoc 1' } ] },
+  { role: 'user', content: [ { type: 'text', text: 'tiep tuc di' }, { type: 'text', text: '<system-reminder>nhac viec khong lien quan</system-reminder>' } ] },
+];
+ok('priorMessages: lay toi & gom assistant cuoi (bo luot user hien tai)', () => {
+  const p = priorMessages(CONVO);
+  assert.equal(p.length, 4, 'giu 4 message dau (toi assistant cuoi)');
+  assert.equal(p[p.length - 1].role, 'assistant');
+});
+ok('priorMessages: hoi thoai moi hoan toan (chua co assistant) -> rong', () => {
+  assert.equal(priorMessages([{ role: 'user', content: 'cau hoi dau tien' }]).length, 0);
+});
+ok('rebuildTranscript: co nhan [Nguoi dung]/[Tro ly], [goi tool], [ket qua tool]', () => {
+  const t = rebuildTranscript(priorMessages(CONVO));
+  assert.match(t, /\[Nguoi dung\] Chao, giup toi sua proxy/);
+  assert.match(t, /\[Tro ly\] Duoc, de toi doc file/);
+  assert.match(t, /\[goi tool Read\]/);
+  assert.match(t, /\[ket qua tool: noi dung file A\]/);
+});
+ok('rebuildTranscript: boc <system-reminder>', () => {
+  const t = rebuildTranscript(CONVO);
+  assert.ok(!/system-reminder/.test(t), 'khong con the reminder');
+  assert.match(t, /\[Nguoi dung\] tiep tuc di/);
+});
+ok('rebuildTranscript: ton trong budget (giu phan cuoi)', () => {
+  const big = [];
+  for (let i = 0; i < 50; i++) big.push({ role: 'user', content: 'dong ' + i + ' ' + 'x'.repeat(50) });
+  const t = rebuildTranscript(big, 400);
+  assert.ok(t.length <= 400 + 40, 'khong vuot budget dang ke');
+  assert.match(t, /luoc bot phan dau/);
+  assert.match(t, /dong 49/, 'giu duoc luot gan nhat');
+});
+ok('analyzeRequest: luot tool_result sau restart van nhan dien dung kind', () => {
+  const r = analyzeRequest({ messages: CONVO.slice(0, 3) });
+  assert.equal(r.kind, 'tool_result');
+  assert.equal(r.results[0].toolUseId, 'toolu_1');
+});
+
+console.log('\n# TOOL_CALL_NOT_FOUND: tu phuc hoi (giu ngu canh) thay vi loop');
+ok('getToolUse: tool vua ghi phien nay -> lay lai duoc + co boot id', () => {
+  recordToolUse('toolu_boot', { conversationId: 'cX', groupId: 'gX', nativeName: 'Read' });
+  const t = getToolUse('toolu_boot');
+  assert.ok(t && t.conversationId === 'cX', 'lay lai duoc tool cung phien');
+  assert.ok(t.boot, 'co gan boot id (tool cua phien CU se bi coi la unknown -> tranh TOOL_RESPONSE mo coi)');
+});
+await okAsync('runGatewayResilient: TOOL_CALL_NOT_FOUND -> retry USER_QUERY tren CUNG conversationId (giu ngu canh)', async () => {
+  const orig = globalThis.fetch;
+  let round = 0; let secondBody = null;
+  globalThis.fetch = async (_url, init) => {
+    round++;
+    const body = JSON.parse(init.body);
+    if (round === 1) return sseRes([ ev('failure', { errorType: 'TOOL_CALL_NOT_FOUND', userMessage: 'Looks like I lost my way.' }) ]);
+    secondBody = body;
+    return sseRes([ ev('textChunk', { textContent: 'Tiep tuc nhe.' }), '[DONE]' ]);
+  };
+  try {
+    const { buildBody } = await import('./core.mjs');
+    const emitter = new BufferEmitter({ model: 'claude-x' });
+    const toolBody = buildBody('TOOL_RESPONSE', { conversationId: 'conv_keep', toolResponses: [{ toolCallId: 't1', content: 'x', toolResponseStatus: 'SUCCESS' }] });
+    const turn = { kind: 'tool_result', results: [{ toolUseId: 't1', content: 'ket qua ABC', isError: false }] };
+    const messages = [ { role: 'user', content: 'lam di' }, { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } ];
+    await runGatewayResilient('faketoken', toolBody, emitter, { conversationId: 'conv_keep', key: 'kr', model: 'claude-x', opts: baseOpts, round: 0 }, { turn, messages, key: 'kr', model: 'claude-x', opts: baseOpts, conversationId: 'conv_keep' });
+    const msg = emitter.toMessage();
+    assert.equal(round, 2, 'phai retry dung 1 lan');
+    assert.equal(secondBody.input.chatType, 'USER_QUERY', 'retry la USER_QUERY');
+    assert.equal(secondBody.input.conversationId, 'conv_keep', 'GIU conversationId cu -> khong mat ngu canh');
+    assert.match(secondBody.input.query, /ket qua ABC/, 'dua ket qua tool vao query');
+    assert.equal(msg.stop_reason, 'end_turn');
+    assert.ok(msg.content.some((b) => b.type === 'text' && b.text.includes('Tiep tuc')));
+  } finally { globalThis.fetch = orig; }
+});
+await okAsync('runGatewayResilient: khong con conversationId -> hoi thoai MOI kem transcript dung lai', async () => {
+  const orig = globalThis.fetch;
+  let round = 0; let secondBody = null;
+  globalThis.fetch = async (_url, init) => {
+    round++;
+    const body = JSON.parse(init.body);
+    if (round === 1) return sseRes([ ev('failure', { errorType: 'TOOL_CALL_NOT_FOUND', userMessage: 'lost' }) ]);
+    secondBody = body;
+    return sseRes([ ev('conversation', { id: 'conv_new' }), ev('textChunk', { textContent: 'da mo lai' }), '[DONE]' ]);
+  };
+  try {
+    const { buildBody } = await import('./core.mjs');
+    const emitter = new BufferEmitter({ model: 'claude-x' });
+    const toolBody = buildBody('TOOL_RESPONSE', { conversationId: null, toolResponses: [{ toolCallId: 't2', content: 'x', toolResponseStatus: 'SUCCESS' }] });
+    const turn = { kind: 'tool_result', results: [{ toolUseId: 't2', content: 'OUTPUT_XYZ', isError: false }] };
+    const messages = [ { role: 'user', content: 'cau hoi goc' }, { role: 'assistant', content: [ { type: 'text', text: 'tra loi truoc do' } ] } ];
+    await runGatewayResilient('faketoken', toolBody, emitter, { conversationId: null, key: 'kr2', model: 'claude-x', opts: baseOpts, round: 0 }, { turn, messages, key: 'kr2', model: 'claude-x', opts: baseOpts, conversationId: null });
+    assert.equal(round, 2, 'retry 1 lan');
+    assert.equal(secondBody.input.chatType, 'USER_QUERY');
+    assert.equal(secondBody.input.conversationId, null, 'hoi thoai MOI');
+    assert.match(secondBody.input.query, /KHOI PHUC NGU CANH/, 'co header khoi phuc');
+    assert.match(secondBody.input.query, /tra loi truoc do/, 'co ngu canh cu dung lai');
+    assert.match(secondBody.input.query, /OUTPUT_XYZ/, 'co ket qua tool luot hien tai');
   } finally { globalThis.fetch = orig; }
 });
 

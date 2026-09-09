@@ -21,6 +21,12 @@ const FILE = path.join(CACHE_DIR, '.claude-sessions.json');
 const MAX_SESSIONS = 300;
 const MAX_TOOLS = 2000;
 
+// ID cua LAN CHAY proxy hien tai. Tool-call phat o lan chay TRUOC (truoc restart) khong con
+// pending tren gateway -> neu tra TOOL_RESPONSE se bi loi TOOL_CALL_NOT_FOUND ("lost my way").
+// Vi vay tool-map chi hop le khi CUNG BOOT_ID; rieng conversationId (sessions) van giu de KHONG
+// mat ngu canh -> luot sau se gui nhu USER_QUERY tren dung conversation cu (xem server.mjs).
+const BOOT_ID = crypto.randomBytes(6).toString('hex');
+
 let state = load();
 
 function load() {
@@ -70,7 +76,7 @@ export function setSession(key, data) {
 }
 
 export function recordToolUse(toolUseId, info) {
-  state.tools[toolUseId] = { ...info, at: Date.now() };
+  state.tools[toolUseId] = { ...info, at: Date.now(), boot: BOOT_ID };
   const keys = Object.keys(state.tools);
   if (keys.length > MAX_TOOLS) {
     keys.sort((a, b) => (state.tools[a].at || 0) - (state.tools[b].at || 0));
@@ -79,7 +85,16 @@ export function recordToolUse(toolUseId, info) {
   saveSoon();
 }
 
-export function getToolUse(toolUseId) { return state.tools[toolUseId] || null; }
+export function getToolUse(toolUseId) {
+  const t = state.tools[toolUseId];
+  if (!t) return null;
+  // Chi hop le khi tool duoc ghi trong DUNG lan chay nay. Entry thieu boot (do phien cu / file
+  // cache tu ban proxy truoc) hoac khac BOOT_ID => LAN CHAY CU: gateway da bo pending -> coi nhu
+  // KHONG biet, de luot tool_result gui nhu USER_QUERY (tren conversationId con giu) thay vi
+  // TOOL_RESPONSE mo coi (tranh loi TOOL_CALL_NOT_FOUND lap vo han).
+  if (t.boot !== BOOT_ID) return null;
+  return t;
+}
 
 const gkey = (conversationId, groupId) => `${conversationId || '_'}::${groupId || '_'}`;
 

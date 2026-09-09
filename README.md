@@ -206,6 +206,20 @@ Anthropic API là **stateless** (client gửi lại toàn bộ lịch sử mỗi
 
 Giữ tối đa 300 phiên và 2000 tool gần nhất. **Reset**: đóng proxy rồi xoá `%USERPROFILE%\.postman-agent-cli\.claude-sessions.json` — phiên sau sẽ probe lại cwd từ đầu.
 
+#### Khôi phục ngữ cảnh khi **mất session**
+
+Khi proxy khởi động lại hoặc `.claude-sessions.json` bị mất/hỏng, ánh xạ `sessionKey → conversationId` biến mất. Trước đây điều này khiến lượt tiếp theo bị gửi lên gateway dưới dạng một `USER_QUERY` trơ trọi (ví dụ `Ket qua tool: (Bash completed with no output)`), **mất sạch ngữ cảnh** hội thoại đang dở. Hai lớp bảo vệ:
+
+1. **Giữ session cache qua restart** — `fix-proxy.cmd` **không còn** đổi tên `.claude-sessions.json` thành `.broken.json` mỗi lần restart; nó chỉ backup ra `.claude-sessions.backup.json` và giữ nguyên file live, nên `conversationId` sống sót qua restart → ngữ cảnh còn nguyên. Muốn reset sạch: đặt `set FIXPROXY_RESET=1` trước khi chạy.
+2. **Dựng lại ngữ cảnh từ lịch sử** (`rebuildTranscript` trong `translate.mjs`) — vì Anthropic *stateless*, client vẫn gửi lại **toàn bộ** lịch sử mỗi lượt. Khi không còn `conversationId` nhưng lịch sử cho thấy hội thoại đang dở, proxy dựng lại một transcript gọn (`[Nguoi dung]/[Tro ly]/[goi tool]/[ket qua tool]`, đã bóc `<system-reminder>`, giữ phần gần nhất trong ngân sách `QUERY_CAP`) và prepend vào `USER_QUERY` để **mở lại** hội thoại trên gateway. Tắt bằng `set PM_CTX_REBUILD=0`.
+
+##### Chống loop `TOOL_CALL_NOT_FOUND` (“Looks like I lost my way”)
+
+Sau restart, một `tool_result` của tool-call **phát ở lần chạy trước** không thể trả bằng `TOOL_RESPONSE` nữa — gateway đã bỏ pending tool-call đó, trả về lỗi `TOOL_CALL_NOT_FOUND` và Claude Code gửi lại liên tục → **loop vô hạn** (đây chính lý do bản cũ xoá sạch session cache mỗi restart). Hai cơ chế:
+
+- **Tool-map theo `BOOT_ID`** (`sessions.mjs`): mỗi lần chạy proxy có một `BOOT_ID`; `getToolUse` chỉ trả tool ghi trong đúng lần chạy này. Tool-call của lần chạy cũ → “không biết” → lượt `tool_result` đi theo nhánh `USER_QUERY` **trên `conversationId` còn giữ** (không mất ngữ cảnh, không gửi `TOOL_RESPONSE` mồ côi).
+- **Tự phục hồi khi vẫn gặp lỗi** (`runGatewayResilient` trong `server.mjs`): nếu gateway vẫn báo `TOOL_CALL_NOT_FOUND`, proxy chuyển sang `USER_QUERY` — (b1) trên cùng `conversationId` để giữ ngữ cảnh; (b2) nếu vẫn hỏng thì mở hội thoại mới kèm transcript dựng lại. Nhờ vậy không bao giờ rơi vào loop.
+
 Nếu cả 4 nguồn đều trống, proxy dùng folder mặc định nằm trong chat-template đã harvest — **có thể là thư mục của máy khác**, dẫn tới việc model khai sai thư mục dự án.
 
 ---

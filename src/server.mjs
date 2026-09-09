@@ -31,6 +31,7 @@ import {
 } from './sessions.mjs';
 import {
   analyzeRequest, buildToolResponses, systemText, extractWorkingDir, isUtilityTurn, utilityReply,
+  rebuildTranscript, priorMessages,
 } from './translate.mjs';
 import { cap, capFull } from './capture.mjs';
 import { isMcpTool, callMcpTool, listMcpTools } from './mcp.mjs';
@@ -312,6 +313,43 @@ async function runGateway(token, body, emitter, ctx) {
   emitter.finish('end_turn');
 }
 
+/**
+ * Chay gateway VA tu phuc hoi khi tool-call bi mo coi (loi TOOL_CALL_NOT_FOUND) - thuong xay ra
+ * sau khi proxy restart: khong the tra TOOL_RESPONSE cho tool-call ma gateway da bo. Ta chuyen sang
+ * USER_QUERY de hoi thoai CHAY TIEP, uu tien GIU conversationId (con ngu canh tren gateway); neu van
+ * hong thi mo hoi thoai MOI kem transcript dung lai tu lich su client gui. Chi phuc hoi khi emitter
+ * CHUA phat gi (loi failure den truoc content) de khong lam hong stream dang do.
+ */
+async function runGatewayResilient(token, gwBody, emitter, ctx, recov) {
+  try {
+    await runGateway(token, gwBody, emitter, ctx);
+    return;
+  } catch (e) {
+    if (e.errorType !== 'TOOL_CALL_NOT_FOUND' || emitter.started || !recov) throw e;
+    const { turn, messages, key, model, opts, conversationId } = recov;
+    const base = (turn.kind === 'tool_result')
+      ? 'Ket qua tool:\n' + turn.results.map((r) => r.content).join('\n---\n')
+      : (turn.text || '');
+    cap({ dir: 'tool_call_not_found_recover', keepConv: !!conversationId });
+    dbg('TOOL_CALL_NOT_FOUND -> phuc hoi bang USER_QUERY (giu conversationId=' + !!conversationId + ')');
+    // Buoc 1: USER_QUERY tren CUNG conversation (giu ngu canh tren gateway).
+    if (conversationId) {
+      try {
+        await runGateway(token, buildBody('USER_QUERY', { query: base.slice(0, QUERY_CAP), conversationId }), emitter, { conversationId, key, model, opts, round: 0 });
+        return;
+      } catch (e2) { if (e2.errorType !== 'TOOL_CALL_NOT_FOUND' || emitter.started) throw e2; }
+    }
+    // Buoc 2: hoi thoai MOI + dung lai ngu canh tu lich su (guaranteed: conversation moi luon nhan USER_QUERY).
+    const prior = CTX_REBUILD ? priorMessages(messages) : [];
+    const cur = (turn.kind === 'tool_result') ? base : ('[Nguoi dung] ' + base);
+    const budget = Math.max(1000, QUERY_CAP - CTX_HEADER.length - CTX_SEP.length - cur.length - 32);
+    const ctxBlock = prior.length ? rebuildTranscript(prior, budget) : '';
+    const q = ctxBlock ? (CTX_HEADER + ctxBlock + CTX_SEP + cur) : cur;
+    cap({ dir: 'tool_call_not_found_recover_fresh', priorMsgs: prior.length, chars: ctxBlock.length });
+    await runGateway(token, buildBody('USER_QUERY', { query: q.slice(0, QUERY_CAP), conversationId: null }), emitter, { conversationId: null, key, model, opts, round: 0 });
+  }
+}
+
 /** Bo dem cho che do khong-stream: gom content thanh mot Messages object. */
 class BufferEmitter {
   constructor({ model, messageId, inputTokens }) { this.model = model; this.messageId = messageId; this.inputTokens = inputTokens || 1; this.blocks = []; this.stopReason = 'end_turn'; this.outputTokens = 0; }
@@ -351,6 +389,12 @@ const anthropicError = (res, status, type, message) => sendJson(res, status, { t
 // Tat bang PM_CWD_PROBE=0.
 const PROBE_PREFIX = 'pmcwd_';
 const PROBE_ENABLED = process.env.PM_CWD_PROBE !== '0';
+
+// KHOI PHUC NGU CANH khi mat session (proxy restart / cache mat): tua dau va cach ngan giua
+// phan ngu canh cu (dung lai tu lich su client gui) va luot moi. Tat bang PM_CTX_REBUILD=0.
+const CTX_REBUILD = process.env.PM_CTX_REBUILD !== '0';
+const CTX_HEADER = '[KHOI PHUC NGU CANH — phien truoc bi mat sau khi proxy khoi dong lai]\nDay la tom tat hoi thoai TRUOC DO (nguoi dung <-> tro ly). Hay doc de nam ngu canh, roi xu ly LUOT MOI o duoi.\n\n=== NGU CANH TRUOC DO ===\n';
+const CTX_SEP = '\n\n=== LUOT MOI ===\n';
 
 // Ky tu backslash dung bang ma (92) de ma nguon khong chua escape long nhau.
 const BS = String.fromCharCode(92);
@@ -513,9 +557,20 @@ async function handleMessages(req, res, body) {
       // de gateway hieu day la LUA CHON cua nguoi dung, khong phai ket qua tool chung chung.
       const looksAskUser = askUserAnswers.length > 0
         || turn.results.some((r) => /"AskUserQuestion"|\bchoose\b|"answer"|selectedOption/i.test(String(r.content)));
-      const text = looksAskUser
+      let text = looksAskUser
         ? 'Nguoi dung da chon (tra loi cau hoi askUser truoc do):\n' + turn.results.map((r) => r.content).join('\n---\n')
         : 'Ket qua tool:\n' + turn.results.map((r) => r.content).join('\n---\n');
+      // MAT SESSION: khong map duoc tool_use_id VA khong con conversationId -> hoi thoai cu da mat.
+      // Client (Anthropic stateless) van gui full lich su -> dung lai ngu canh va MO LAI hoi thoai,
+      // thay vi gui mot 'Ket qua tool: ...' tro trong khien model mat phuong huong.
+      if (CTX_REBUILD && !conversationId) {
+        const prior = priorMessages(messages);
+        if (prior.length) {
+          const budget = Math.max(1000, QUERY_CAP - CTX_HEADER.length - CTX_SEP.length - text.length - 32);
+          const ctxBlock = rebuildTranscript(prior, budget);
+          if (ctxBlock) { text = CTX_HEADER + ctxBlock + CTX_SEP + text; cap({ dir: 'context_rebuilt', from: 'tool_result', priorMsgs: prior.length, chars: ctxBlock.length }); dbg('mat session -> dung lai ngu canh tu', prior.length, 'message (tool_result)'); }
+        }
+      }
       if (looksAskUser) cap({ dir: 'askuser_answer_fallback', note: 'unknown tool_use_id -> goi thanh USER_QUERY lua chon', preview: text.slice(0, 400) });
       gwBody = buildBody('USER_QUERY', { query: text.slice(0, QUERY_CAP), conversationId });
     } else {
@@ -530,7 +585,19 @@ async function handleMessages(req, res, body) {
   } else {
     conversationId = sess && sess.conversationId;
     let query = turn.text || '';
-    if (!conversationId) query = buildToolCard({ workingDir, claudeToolNames: claudeTools }) + '\n\n' + query; // card 1 lan dau hoi thoai
+    if (!conversationId) {
+      const prior = CTX_REBUILD ? priorMessages(messages) : [];
+      if (prior.length) {
+        // MAT SESSION giua chung hoi thoai (co assistant truoc do nhung khong con conversationId)
+        // -> mo lai ngu canh tu lich su day du client gui, roi noi luot moi vao cuoi.
+        const cur = '[Nguoi dung] ' + query;
+        const budget = Math.max(1000, QUERY_CAP - CTX_HEADER.length - CTX_SEP.length - cur.length - 32);
+        const ctxBlock = rebuildTranscript(prior, budget);
+        if (ctxBlock) { query = CTX_HEADER + ctxBlock + CTX_SEP + cur; cap({ dir: 'context_rebuilt', from: 'user_query', priorMsgs: prior.length, chars: ctxBlock.length }); dbg('mat session -> dung lai ngu canh tu', prior.length, 'message (user_query)'); }
+      } else {
+        query = buildToolCard({ workingDir, claudeToolNames: claudeTools }) + '\n\n' + query; // card 1 lan dau hoi thoai
+      }
+    }
     gwBody = buildBody('USER_QUERY', { query: query.slice(0, QUERY_CAP), conversationId: conversationId || null });
   }
 
@@ -543,7 +610,7 @@ async function handleMessages(req, res, body) {
       // Tap SSE tho chi khi DEBUG_PROXY (tranh ghi dia nhieu trong phien binh thuong).
       onSend: DEBUG ? (event, data) => { if (event !== 'content_block_delta' || (data.delta && data.delta.type === 'input_json_delta')) cap({ dir: 'sse_out', event, data }); } : null });
     try {
-      await runGateway(token, gwBody, emitter, ctx);
+      await runGatewayResilient(token, gwBody, emitter, ctx, { turn, messages, key, model: anthropicModel, opts, conversationId });
       if (!emitter.stopped) emitter.finish('end_turn');
     } catch (e) {
       log('stream error:', e.message, e.errorType ? '(' + e.errorType + ')' : '');
@@ -555,7 +622,7 @@ async function handleMessages(req, res, body) {
   } else {
     const emitter = new BufferEmitter({ model: anthropicModel, messageId, inputTokens });
     try {
-      await runGateway(token, gwBody, emitter, ctx);
+      await runGatewayResilient(token, gwBody, emitter, ctx, { turn, messages, key, model: anthropicModel, opts, conversationId });
       sendJson(res, 200, emitter.toMessage());
     } catch (e) {
       log('error:', e.message);
@@ -602,7 +669,7 @@ export function startServer(port = PORT, host = HOST) {
   });
 }
 
-export { server, handleMessages, runGateway, prepBody, thinkingFlag, BufferEmitter };
+export { server, handleMessages, runGateway, runGatewayResilient, prepBody, thinkingFlag, BufferEmitter };
 
 // Chay truc tiep: node src/server.mjs  (launcher src/claude-proxy.mjs goi startServer rieng).
 const invoked = process.argv[1] && /(?:^|[\\/])server\.mjs$/.test(process.argv[1].replace(/\\/g, '/'));

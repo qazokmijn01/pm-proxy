@@ -43,6 +43,8 @@ REM ------------------------------------------------------------
 :mode_start
 call :ensure_node
 if errorlevel 1 exit /b 1
+REM Nha cong truoc khi start de KHONG bao gio bi EADDRINUSE / phai kill tay.
+call :free_port
 if /i "%SUB%"=="noharvest" goto :skip_harvest
 echo [pm-ai-proxy] Harvest token/template tu Postman Desktop ^(toi da ~30s^) ...
 node "%~dp0src\harvest.mjs" --timeout=30
@@ -61,19 +63,7 @@ REM ------------------------------------------------------------
 :mode_restart
 call :ensure_node
 if errorlevel 1 exit /b 1
-echo [pm-ai-proxy] Tim tien trinh dang giu cong %PM_ANTHROPIC_PORT% ...
-set "KILLED="
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr :%PM_ANTHROPIC_PORT% ^| findstr LISTENING') do (
-  echo   -^> taskkill PID %%p
-  taskkill /PID %%p /F >nul 2>&1
-  set "KILLED=1"
-)
-if defined KILLED (
-  echo [pm-ai-proxy] Da dung instance cu. Cho 1s...
-  "%SystemRoot%\System32\timeout.exe" /t 1 /nobreak >nul 2>&1
-) else (
-  echo [pm-ai-proxy] Khong co instance nao dang chay.
-)
+call :free_port
 if /i "%SUB%"=="nodebug" goto :restart_nodebug
 set DEBUG_PROXY=1
 echo [pm-ai-proxy] DEBUG_PROXY: ON
@@ -148,6 +138,31 @@ exit /b 1
 for /f "delims=" %%v in ('node --version 2^>nul') do set "NODEVER=%%v"
 echo [pm-ai-proxy] Node.js san sang: %NODEVER%
 exit /b 0
+
+REM ------------------------------------------------------------
+REM Nha cong %PM_ANTHROPIC_PORT%: kill tien trinh dang LISTEN roi XAC NHAN da nha (thu toi da 5 lan).
+REM Dung o CA 'start' lan 'restart' -> khong bao gio EADDRINUSE / phai kill tay.
+:free_port
+setlocal enabledelayedexpansion
+set /a "FP_TRY=0"
+:fp_loop
+set "FP_PID="
+for /f "tokens=5" %%p in ('netstat -ano 2^>nul ^| findstr :%PM_ANTHROPIC_PORT% ^| findstr LISTENING') do set "FP_PID=%%p"
+if not defined FP_PID (
+  echo [pm-ai-proxy] Cong %PM_ANTHROPIC_PORT% da san sang.
+  exit /b 0
+)
+set /a "FP_TRY+=1"
+if !FP_TRY! GTR 5 (
+  echo [pm-ai-proxy] CANH BAO: van khong nha duoc cong %PM_ANTHROPIC_PORT% ^(PID !FP_PID!^).
+  echo   - Tien trinh giu cong co the chay quyen Administrator: mo lai file nay bang "Run as administrator".
+  echo   - Hoac dung cong khac:  set PM_ANTHROPIC_PORT=9000  roi chay lai.
+  exit /b 1
+)
+echo [pm-ai-proxy] Cong %PM_ANTHROPIC_PORT% dang bi PID !FP_PID! giu -^> taskkill ^(lan !FP_TRY!^)...
+taskkill /PID !FP_PID! /F /T >nul 2>&1
+"%SystemRoot%\System32\timeout.exe" /t 1 /nobreak >nul 2>&1
+goto :fp_loop
 
 REM ------------------------------------------------------------
 :help
