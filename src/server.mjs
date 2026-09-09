@@ -22,7 +22,7 @@ import {
 } from './core.mjs';
 import { applySession } from './session.mjs';
 import {
-  mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP,
+  mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP, subagentThirdParty,
   conformToolName, conformInputToSchema,
 } from './map.mjs';
 import { AnthropicSSE, estimateTokens, genMessageId, THINKING_SIG } from './sse.mjs';
@@ -153,14 +153,18 @@ function prepBody(body, opts) {
   else if (thinking === false) dm.useThinkingModeIfAvailable = false;
   const ct = (body.clientTools = body.clientTools || {});
   ct.excludedTools = excludedToolsFor(claudeTools, Array.isArray(ct.excludedTools) ? ct.excludedTools : []);
+  // thirdParty cua template la MCP cua MAY DA HARVEST (duong dan + token cua may khac) ->
+  // khong con dung o may dang chay. Dung lai tu dau: chi quang cao thu proxy nay thuc su
+  // phuc vu duoc (MCP cau hinh o may nay + tool subagent ao).
+  ct.thirdParty = {};
+  // SUBAGENT AO: gateway khong co tool uy nhiem subagent -> proxy tu cap. Xem map.mjs.
+  const subTp = subagentThirdParty(claudeTools);
+  if (subTp) ct.thirdParty = { ...ct.thirdParty, ...subTp };
   // AUTO-REGISTER (B2): advertise MCP-server tools to the model via thirdParty.
   if (MCP_AUTOREGISTER) {
     try {
       ensureMcpThirdPartyWarm();
-      if (mcpThirdPartyCache && Object.keys(mcpThirdPartyCache).length) {
-        const tp = (ct.thirdParty && typeof ct.thirdParty === 'object' && !Array.isArray(ct.thirdParty)) ? ct.thirdParty : {};
-        ct.thirdParty = { ...tp, ...mcpThirdPartyCache };
-      }
+      if (mcpThirdPartyCache && Object.keys(mcpThirdPartyCache).length) ct.thirdParty = { ...ct.thirdParty, ...mcpThirdPartyCache };
     } catch {}
   }
   return body;

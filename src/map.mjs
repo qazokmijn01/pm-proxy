@@ -53,6 +53,7 @@ const CAP_EQUIV = {
   webfetch: ['WebFetch', 'web_fetch', 'fetch_url', 'file_fetch'],
   websearch: ['WebSearch', 'web_search'],
   askuserquestion: ['AskUserQuestion', 'ask_user', 'askuser'],
+  task: ['Task', 'Agent', 'task', 'agent'],
 };
 function adaptToClient(out, set) {
   if (!out || !out.name) return out;
@@ -173,59 +174,119 @@ const TRANSLATORS = {
   askUser(a) {
     // Postman phat 1 trong 2 shape:
     //   (cu/so it)  { question, options }
-    //   (moi/so nhieu) { questions: [{ id, message, options, header?, ... }] }
-    // options: string[] hoac {label,value}[]. AskUserQuestion doi questions[].options la
-    // {label} va KHONG rong -> tu chen Yes/No khi thieu.
-    // AskUserQuestion (Claude Code) BAT BUOC: questions[].header la string, va MOI
-    // options[].description la string. Thieu -> InputValidationError "expected string but
-    // provided unknown". Vi vay LUON set ca hai (mac dinh '') du gateway khong cung cap.
+    //   (moi/so nhieu) { questions: [{ id, message, options, allow_multiple?, ... }] }
+    //
+    // Dich sang AskUserQuestion theo DUNG schema claude-agent-sdk (nguon: input_schema ma
+    // Claude Code khai tren wire):
+    //   questions      1..4
+    //   .question      string (bat buoc)
+    //   .header        string (bat buoc) - nhan "chip/tag", max 12 ky tu
+    //   .multiSelect   boolean (bat buoc)
+    //   .options       2..4 phan tu, moi phan tu { label, description } (ca hai bat buoc)
+    //   .options[].label  "concise (1-5 words)" - phan giai thich thuoc ve description
+    // Schema noi RO: "There should be no 'Other' option, that will be provided
+    // automatically" -> KHONG tu chen option "Lua chon khac".
+    // additionalProperties:false o moi cap -> khong duoc them khoa la.
+    const HEADER_MAX = 12, LABEL_MAX = 40, OPTS_MAX = 4, QS_MAX = 4;
+
+    const clampHeader = (raw, fallback) => (String(raw || fallback || 'Chon').trim().slice(0, HEADER_MAX).trim() || 'Chon');
+
+    // Gateway hay nhet ca cau vao label ("TUI - giao dien terminal dep hon"). Chuan doi label
+    // ngan + description giai thich -> tach o dau gach/hai cham dau tien.
+    const splitLabel = (rawLabel, rawDesc) => {
+      let label = String(rawLabel).trim();
+      let description = String(rawDesc == null ? '' : rawDesc).trim();
+      if (!description) {
+        const m = label.match(/^(.{1,40}?)\s+[-–—:]\s+(.+)$/);
+        if (m) { label = m[1].trim(); description = m[2].trim(); }
+      }
+      if (label.length > LABEL_MAX) { if (!description) description = label; label = label.slice(0, LABEL_MAX - 1).trim() + '…'; }
+      return { label, description };
+    };
+
     const toOptions = (rawOptions) => {
       let options = [];
       if (Array.isArray(rawOptions)) {
         options = rawOptions.map((o) => {
           if (o && typeof o === 'object') {
             const label = o.label != null ? o.label : (o.value != null ? o.value : o.title);
-            if (label == null) return null;
-            return { label: String(label), description: String(o.description != null ? o.description : '') };
+            return label == null ? null : splitLabel(label, o.description);
           }
-          return { label: String(o), description: '' };
+          return splitLabel(o, '');
         }).filter(Boolean);
       }
       if (!options.length) options = [{ label: 'Yes', description: '' }, { label: 'No', description: '' }];
-      return options;
-    };
-    // AskUserQuestion: options moi cau phai 2..4 phan tu (minItems:2, maxItems:4). Gateway co the
-    // phat >4 -> giu 3 dau + gop phan du vao 1 option "Lua chon khac..." (khong mat thong tin, hop le).
-    // Thieu (<2) -> chen them de du toi thieu 2.
-    const capOptions = (options) => {
-      if (options.length > 4) {
-        const kept = options.slice(0, 3);
-        const restLabels = options.slice(3).map((o) => o.label);
-        kept.push({ label: 'Lua chon khac...', description: ('Gom: ' + restLabels.join(' | ')).slice(0, 500) });
-        options = kept;
-      }
       while (options.length < 2) options.push({ label: options.length ? 'Huy' : 'Yes', description: '' });
       return options;
     };
-    const buildQ = (src) => {
-      const question = pickArg(src, 'question', 'prompt', 'message', 'text');
-      if (!question) return null;
-      const rawHeader = pickArg(src, 'header', 'title', 'category');
-      const header = String(rawHeader || question).trim().slice(0, 40) || 'Chon';
-      return { header, question: String(question), multiSelect: !!pickArg(src, 'multiSelect', 'multiselect'), options: capOptions(toOptions(pickArg(src, 'options', 'choices'))) };
+
+    // Chia deu vao k nhom, moi nhom <= OPTS_MAX va >= 2. 13 option / 4 nhom -> [4,3,3,3].
+    const chunkEven = (arr, groups) => {
+      const out = []; let i = 0;
+      for (let g = 0; g < groups; g++) {
+        const size = Math.ceil((arr.length - i) / (groups - g));
+        out.push(arr.slice(i, i + size));
+        i += size;
+      }
+      return out.filter((g) => g.length);
     };
 
-    // Shape so nhieu: { questions: [...] } - AskUserQuestion cho toi da 4 cau hoi.
-    const rawQuestions = pickArg(a, 'questions');
-    if (Array.isArray(rawQuestions) && rawQuestions.length) {
-      const questions = rawQuestions.map(buildQ).filter(Boolean).slice(0, 4);
-      if (questions.length) return { name: 'AskUserQuestion', input: { questions } };
-    }
+    // 1 cau hoi cua gateway -> 1..budget cau hoi hop le. budget = so slot con lai.
+    const buildQs = (src, budget) => {
+      const question = pickArg(src, 'question', 'prompt', 'message', 'text');
+      if (!question) return [];
+      const multiSelect = !!pickArg(src, 'multiSelect', 'multiselect', 'allow_multiple', 'allowMultiple', 'multiple', 'multi');
+      const header = clampHeader(pickArg(src, 'header', 'title', 'category'), question);
+      const options = toOptions(pickArg(src, 'options', 'choices'));
+      if (options.length <= OPTS_MAX) return [{ header, question: String(question), multiSelect, options }];
 
-    // Shape so it: { question, options }
-    const q = buildQ(a);
-    if (!q) return null;
-    return { name: 'AskUserQuestion', input: { questions: [q] } };
+      // Chon-NHIEU: tach thanh nhieu cau (van tick duoc het) - giu dung y dinh cua gateway.
+      if (multiSelect) {
+        const kept = options.slice(0, budget * OPTS_MAX);
+        const dropped = options.slice(budget * OPTS_MAX).map((o) => o.label);
+        const groups = chunkEven(kept, Math.min(budget, Math.ceil(kept.length / OPTS_MAX)));
+        return groups.map((opts, i) => {
+          const many = groups.length > 1;
+          const tail = (i === groups.length - 1 && dropped.length) ? '\nLua chon khac: ' + dropped.join(' | ') : '';
+          return {
+            header: many ? clampHeader(header.slice(0, HEADER_MAX - 4).trim() + ' ' + (i + 1) + '/' + groups.length) : header,
+            question: String(question) + (many ? ' (phan ' + (i + 1) + '/' + groups.length + ')' : '') + tail,
+            multiSelect: true,
+            options: opts,
+          };
+        });
+      }
+
+      // Chon-MOT: tach cau se thanh "chon nhieu lan" -> sai y dinh. Giu 4 dau, neu phan du
+      // trong noi dung cau hoi (client tu co o nhap tu do de go lua chon khac).
+      return [{
+        header,
+        question: String(question) + '\nLua chon khac: ' + options.slice(OPTS_MAX).map((o) => o.label).join(' | '),
+        multiSelect: false,
+        options: options.slice(0, OPTS_MAX),
+      }];
+    };
+
+    const rawQuestions = pickArg(a, 'questions');
+    const srcs = (Array.isArray(rawQuestions) && rawQuestions.length) ? rawQuestions : [a];
+    const questions = [];
+    for (let i = 0; i < srcs.length && questions.length < QS_MAX; i++) {
+      const others = srcs.length - i - 1;                              // moi cau goc con lai can >=1 slot
+      const budget = Math.max(1, QS_MAX - questions.length - others);
+      questions.push(...buildQs(srcs[i], budget));
+    }
+    if (!questions.length) return null;
+    return { name: 'AskUserQuestion', input: { questions: questions.slice(0, QS_MAX) } };
+  },
+  SubAgent(a) {
+    // Schema native cua Postman chua duoc quan sat tren wire (SubAgent xua nay luon bi
+    // exclude) -> phong thu theo *vai tro* (tool-mapping.md #3) va de capture ghi lai
+    // payload that de tinh chinh sau.
+    const prompt = pickArg(a, 'prompt', 'task', 'instruction', 'instructions', 'query', 'message', 'goal', 'description');
+    if (!prompt) return null;
+    const description = String(pickArg(a, 'description', 'title', 'name', 'summary') || prompt).slice(0, 60);
+    const subagent_type = String(pickArg(a, 'subagent_type', 'agentType', 'agent', 'type', 'role') || 'general-purpose');
+    return { name: 'Task', input: { description, prompt: String(prompt), subagent_type } };
   },
 };
 
@@ -239,6 +300,7 @@ const TRANSLATORS = {
 // Claude Code tools openclaw already has (Bash/Glob/Grep/Read/Write/Edit).
 // ---------------------------------------------------------------------------
 const MCP_TRANSLATORS = {
+  delegate_subagent: (a) => TRANSLATORS.SubAgent(a),   // tool AO do proxy tu cap (xem subagentThirdParty)
   run_cmd: (a) => TRANSLATORS.executeShellCommand(a),
   search_content: (a) => TRANSLATORS.searchFiles(a),
   read_text_file: (a) => TRANSLATORS.readFile(a),
@@ -294,12 +356,14 @@ export const CLAUDE_TO_NATIVES = {
   webfetch: ['fetchUrl'],
   websearch: ['webSearch'],
   askuserquestion: ['askUser'],
+  task: ['SubAgent'],
+  agent: ['SubAgent'],
 };
 
 // Moi native Postman ta biet cach dich (dung de tinh excludedTools).
 export const MAPPABLE_NATIVES = [
   'executeShellCommand', 'listDirectory', 'searchFiles', 'searchInFiles',
-  'readFile', 'createFile', 'writeFile', 'editFile', 'fetchUrl', 'webSearch', 'askUser',
+  'readFile', 'createFile', 'writeFile', 'editFile', 'fetchUrl', 'webSearch', 'askUser', 'SubAgent',
 ];
 
 // Native khong bao gio co duong ve Claude Code -> luon loai khoi gateway khi co the
@@ -307,7 +371,7 @@ export const MAPPABLE_NATIVES = [
 export const ALWAYS_EXCLUDE = [
   'navigateInApp', 'linkToLocalDirectory', 'todoWrite', 'recommendNextActions',
   'getTabDetails', 'searchPostman', 'learnAboutPostmanTerm', 'searchConversationData',
-  'SubAgent', 'getVariables', 'getSharedVariables', 'sendRequest', 'showRichOutput',
+  'getVariables', 'getSharedVariables', 'sendRequest', 'showRichOutput',
 ];
 
 /** Tap ten Claude Code ma client khai, chuan hoa lowercase. */
@@ -318,6 +382,41 @@ export function claudeToolSet(tools) {
     if (n) s.add(String(n).toLowerCase());
   }
   return s;
+}
+
+// ---------------------------------------------------------------------------
+// SUBAGENT AO. Gateway Postman KHONG co tool uy nhiem subagent (da do tren wire: no chua
+// bao gio phat 'SubAgent'). Nhung clientTools.thirdParty la kenh CLIENT tu khai tool cho
+// gateway - Postman Desktop dung dung kenh nay de khai MCP server, kem ca ten/mo ta/schema.
+// Proxy khai o day mot tool ao; khi model goi, mcpFsTranslate ('<server>__local__<action>')
+// dinh tuyen ve TRANSLATORS.SubAgent -> Task/Agent cua Claude Code, la ben THUC SU chay
+// subagent. Chi khai khi client that su co tool do, khong thi im lang.
+// ---------------------------------------------------------------------------
+export const SUBAGENT_SERVER = 'pm-proxy';
+export const SUBAGENT_TOOL = SUBAGENT_SERVER + '__local__delegate_subagent';
+
+export function subagentThirdParty(claudeToolNames) {
+  const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
+  if (!set.has('task') && !set.has('agent')) return null;
+  return {
+    [SUBAGENT_SERVER]: {
+      serverConfig: { command: 'pm-ai-proxy-subagent', args: [] },
+      tools: [{
+        name: SUBAGENT_TOOL,
+        description: 'Delegate one self-contained task to an independent sub-agent. The sub-agent starts with a fresh context and has its own file/shell tools, and returns a final report. Use it for work that is large or self-contained enough to be worth isolating (broad code search, a whole review pass, an independent subtask). Give the sub-agent everything it needs in `prompt` - it cannot see this conversation. Do not use it for a single quick read or command.',
+        parameters: {
+          type: 'object',
+          properties: {
+            description: { type: 'string', description: 'Short 3-5 word label for the task' },
+            prompt: { type: 'string', description: 'Full self-contained instructions for the sub-agent, including absolute paths and the exact output expected' },
+          },
+          required: ['description', 'prompt'],
+          additionalProperties: false,
+          $schema: 'http://json-schema.org/draft-07/schema#',
+        },
+      }],
+    },
+  };
 }
 
 /** Cac native Postman NEN giu, dua tren bo tool Claude Code khai. */
@@ -469,6 +568,19 @@ export function buildToolCard({ workingDir, claudeToolNames } = {}) {
   // Nudge (#4): Claude Code chi render menu khi model GOI askUser (khong co heuristic text).
   // Thuc model dung askUser khi can lua chon - chi khi client that su khai AskUserQuestion.
   if (set.has('askuserquestion')) lines.push('Khi can nguoi dung quyet dinh giua cac phuong an, PHAI GOI cong cu askUser de hien menu chon - TUYET DOI KHONG liet ke lua chon bang van ban.');
+  // SUBAGENT: tool nay do proxy tu cap (subagentThirdParty) nen gateway khong co mo ta san
+  // trong huan luyen -> phai noi RO khi nao dung, keo model bo qua. Nguong dat o "viec lon
+  // hoac >=2 viec doc lap" de tranh de subagent cho tung thao tac vat (tot credit).
+  if (set.has('task') || set.has('agent')) {
+    lines.push(
+      'UY NHIEM SUB-AGENT - cong cu ' + SUBAGENT_TOOL + ' (tham so: description ngan 3-5 tu, prompt tu chua):',
+      '- BAT BUOC dung khi lan luot nay co TU 2 VIEC DOC LAP tro len (vi du: ra soat nhieu module khac nhau, tim kiem tren nhieu thu muc, kiem tra nhieu gia thuyet). Phat NHIEU tool call ' + SUBAGENT_TOOL + ' trong CUNG mot luot de chung chay DONG THOI, dung lam tuan tu.',
+      '- NEN dung khi mot viec lon va tu chua (ra soat ca thu muc, doc nhieu file de tong hop, mot luot review day du).',
+      '- KHONG dung cho viec vat: doc 1 file, chay 1 lenh, sua 1 cho da biet ro - tu lam nhanh hon.',
+      '- Sub-agent KHONG thay hoi thoai nay: prompt phai tu chua (duong dan tuyet doi, muc tieu, dinh dang ket qua mong muon).',
+      '- Nguoi dung yeu cau "uy nhiem" / "sub-agent" / "chay song song" => PHAI goi cong cu nay, khong tu lam.',
+    );
+  }
   lines.push('Neu thu muc lam viec co file CLAUDE.md, PHAI tuan theo no.');
   return lines.join('\n');
 }

@@ -12,6 +12,7 @@ import assert from 'node:assert';
 import {
   pickArg, mapPostmanToolToClaude, excludedToolsFor, buildToolCard, mapModel, claudeToolSet,
   conformToolName, conformInputToSchema,
+  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL,
 } from './map.mjs';
 import { AnthropicSSE } from './sse.mjs';
 import { analyzeRequest, buildToolResponses, extractAskUserAnswer, rebuildTranscript, priorMessages } from './translate.mjs';
@@ -164,16 +165,46 @@ ok('askUser so nhieu nhieu cau hoi => map tat ca questions', () => {
   assert.deepEqual(r.input.questions[1].options, [{ label: 'Yes', description: '' }, { label: 'No', description: '' }]);
 });
 
-ok('askUser > 4 options => cat con 4 (giu 3 dau + "Lua chon khac...") - fix InputValidationError too_big max 4', () => {
+ok('askUser CHON-MOT > 4 options => giu 4 dau, phan du neu trong cau hoi (chuan: KHONG tu them option "Other")', () => {
   const r = mapPostmanToolToClaude('askUser', {
     questions: [{ message: 'Chon quy trinh?', options: ['A', 'B', 'C', 'D', 'E'] }],
   }, claudeToolSet([{ name: 'AskUserQuestion' }]));
-  const opts = r.input.questions[0].options;
-  assert.equal(opts.length, 4, 'dung 4 options (max)');
-  assert.deepEqual(opts.slice(0, 3).map((o) => o.label), ['A', 'B', 'C']);
-  assert.equal(opts[3].label, 'Lua chon khac...');
-  assert.ok(opts[3].description.includes('D') && opts[3].description.includes('E'), 'phan du nam trong description (khong mat)');
-  assert.ok(opts.every((o) => typeof o.label === 'string' && typeof o.description === 'string'));
+  assert.equal(r.input.questions.length, 1, 'chon-mot thi KHONG tach cau');
+  const q = r.input.questions[0];
+  assert.equal(q.options.length, 4, 'dung 4 options (maxItems)');
+  assert.deepEqual(q.options.map((o) => o.label), ['A', 'B', 'C', 'D']);
+  assert.ok(!q.options.some((o) => /khac|other/i.test(o.label)), 'khong tu chen option "Other"');
+  assert.ok(q.question.includes('E'), 'phan du nam trong noi dung cau hoi (khong mat)');
+});
+
+ok('askUser CHON-NHIEU > 4 options => tach thanh nhieu cau, khong mat lua chon nao', () => {
+  const opts = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm'];
+  const r = mapPostmanToolToClaude('askUser', {
+    questions: [{ message: 'Chon cac tinh nang?', options: opts, allow_multiple: true }],
+  }, claudeToolSet([{ name: 'AskUserQuestion' }]));
+  const qs = r.input.questions;
+  assert.ok(qs.length > 1 && qs.length <= 4, 'tach thanh 2..4 cau');
+  assert.ok(qs.every((q) => q.multiSelect === true), 'moi cau deu la chon-nhieu');
+  assert.ok(qs.every((q) => q.options.length >= 2 && q.options.length <= 4), 'moi cau 2..4 options');
+  const all = qs.flatMap((q) => q.options.map((o) => o.label));
+  assert.deepEqual(all, opts, 'giu du 13 lua chon, dung thu tu');
+});
+
+ok('askUser: header <= 12 ky tu (chuan: chip/tag max 12 chars)', () => {
+  const r = mapPostmanToolToClaude('askUser', {
+    questions: [{ message: 'Mot cau hoi rat dai de kiem tra viec cat header cho dung chuan?', options: ['A', 'B'] }],
+  }, claudeToolSet([{ name: 'AskUserQuestion' }]));
+  assert.ok(r.input.questions[0].header.length <= 12, 'header <= 12 ky tu');
+});
+
+ok('askUser: label dai duoc tach thanh label ngan + description', () => {
+  const r = mapPostmanToolToClaude('askUser', {
+    question: 'Chon thu vien?',
+    options: ['Tabulator - bang editable, ghi nguoc Base', 'RevoGrid - cam giac spreadsheet'],
+  }, claudeToolSet([{ name: 'AskUserQuestion' }]));
+  const o = r.input.questions[0].options[0];
+  assert.equal(o.label, 'Tabulator');
+  assert.equal(o.description, 'bang editable, ghi nguoc Base');
 });
 
 ok('askUser 1 option => chen them cho du toi thieu 2 (minItems 2)', () => {
@@ -181,6 +212,83 @@ ok('askUser 1 option => chen them cho du toi thieu 2 (minItems 2)', () => {
   const opts = r.input.questions[0].options;
   assert.ok(opts.length >= 2, 'it nhat 2 options');
   assert.equal(opts[0].label, 'Only');
+});
+
+ok('askUser allow_multiple => multiSelect true (shape that tren wire)', () => {
+  const r = mapPostmanToolToClaude('askUser', {
+    questions: [{ id: 'goal', message: 'Muc tieu chinh?', options: ['A', 'B'], allow_multiple: true }],
+  }, claudeToolSet([{ name: 'AskUserQuestion' }]));
+  assert.equal(r.input.questions[0].multiSelect, true);
+});
+
+ok('askUser khong khai multi => multiSelect false', () => {
+  const r = mapPostmanToolToClaude('askUser', { question: 'Chon 1?', options: ['A', 'B'] }, claudeToolSet([{ name: 'AskUserQuestion' }]));
+  assert.equal(r.input.questions[0].multiSelect, false);
+});
+
+console.log('\n# SubAgent -> Task');
+ok('SubAgent -> Task {description, prompt, subagent_type}', () => {
+  const r = mapPostmanToolToClaude('SubAgent', { task: 'Ra soat toan bo handler auth', agentType: 'code-reviewer' }, claudeToolSet([{ name: 'Task' }]));
+  assert.equal(r.kind, 'client');
+  assert.equal(r.name, 'Task');
+  assert.equal(r.input.prompt, 'Ra soat toan bo handler auth');
+  assert.equal(r.input.subagent_type, 'code-reviewer');
+  assert.ok(typeof r.input.description === 'string' && r.input.description.length > 0);
+});
+
+ok('SubAgent khong co agentType => general-purpose', () => {
+  const r = mapPostmanToolToClaude('SubAgent', { prompt: 'Tim tat ca TODO' }, claudeToolSet([{ name: 'Task' }]));
+  assert.equal(r.input.subagent_type, 'general-purpose');
+});
+
+ok('client khai ten "Agent" => SubAgent doi ten sang Agent', () => {
+  const r = mapPostmanToolToClaude('SubAgent', { prompt: 'Tim tat ca TODO' }, claudeToolSet([{ name: 'Agent' }]));
+  assert.equal(r.kind, 'client');
+  assert.equal(r.name, 'Agent');
+  assert.equal(r.input.prompt, 'Tim tat ca TODO');
+});
+
+ok('SubAgent thieu noi dung => drop', () => {
+  const r = mapPostmanToolToClaude('SubAgent', {}, claudeToolSet([{ name: 'Task' }]));
+  assert.equal(r.kind, 'drop');
+});
+
+ok('tool AO delegate_subagent (gateway goi) => Task cua Claude Code', () => {
+  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'Ra soat auth', prompt: 'Doc toan bo src/auth va bao cao loi' }, claudeToolSet([{ name: 'Task' }]));
+  assert.equal(r.kind, 'client');
+  assert.equal(r.name, 'Task');
+  assert.equal(r.input.prompt, 'Doc toan bo src/auth va bao cao loi');
+  assert.equal(r.input.subagent_type, 'general-purpose');
+});
+
+ok('subagentThirdParty: chi khai tool ao khi client chay duoc subagent', () => {
+  assert.equal(subagentThirdParty(claudeToolSet([{ name: 'Read' }])), null, 'khong co Task/Agent => khong khai');
+  const tp = subagentThirdParty(claudeToolSet([{ name: 'Agent' }]));
+  assert.ok(tp && tp[SUBAGENT_SERVER], 'co Agent => khai server ao');
+  const t = tp[SUBAGENT_SERVER].tools[0];
+  assert.equal(t.name, SUBAGENT_TOOL);
+  assert.deepEqual(t.parameters.required, ['description', 'prompt']);
+});
+
+ok('card: co Task => co huong dan uy nhiem sub-agent (keu goi chay dong thoi)', () => {
+  const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Read' }, { name: 'Task' }]) });
+  assert.ok(card.includes(SUBAGENT_TOOL), 'card neu dung ten tool subagent');
+  assert.ok(/2 VIEC DOC LAP/.test(card), 'co nguong: >=2 viec doc lap');
+  assert.ok(/DONG THOI/.test(card), 'yeu cau chay dong thoi thay vi tuan tu');
+  assert.ok(/KHONG dung cho viec vat/.test(card), 'co chan lam dung');
+});
+
+ok('card: client khong co Task/Agent => KHONG nhac sub-agent', () => {
+  const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Read' }]) });
+  assert.ok(!card.includes(SUBAGENT_TOOL));
+  assert.ok(!/SUB-AGENT/.test(card));
+});
+
+ok('client khong khai Task/Agent => SubAgent bi loai khoi gateway', () => {
+  const ex = excludedToolsFor(claudeToolSet([{ name: 'Read' }]), []);
+  assert.ok(ex.includes('SubAgent'));
+  const ex2 = excludedToolsFor(claudeToolSet([{ name: 'Task' }]), []);
+  assert.ok(!ex2.includes('SubAgent'));
 });
 
 ok('askUser > 4 cau hoi => cat con 4 (maxItems 4)', () => {
@@ -409,6 +517,34 @@ await okAsync('gateway phat askUser (client co AskUserQuestion) => proxy phat to
     assert.equal(tu.input.questions[0].question, 'Sep chon DB nao?');
     const labels = tu.input.questions[0].options.map((o) => o.label);
     assert.deepEqual(labels, ['Postgres', 'MySQL'], 'giu dung options lam label');
+  } finally { globalThis.fetch = orig; }
+});
+
+await okAsync('gateway phat SubAgent (client co Task) => proxy phat tool_use Task', async () => {
+  if (!loadTemplate()) throw new Error('can .chat-template.json (da harvest) de buildBody');
+  const CT_TASK = claudeToolSet([{ name: 'Read' }, { name: 'Task' }]);
+  const orig = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    assert.ok(!body.clientTools.excludedTools.includes('SubAgent'), 'SubAgent KHONG bi loai khi client khai Task');
+    return sseRes([
+      ev('conversation', { id: 'conv_sub' }),
+      ev('toolCallChunk', { toolCalls: [{ id: 'toolu_sub', toolCallGroupId: 'grp_sub', function: { name: 'SubAgent', arguments: '{"task":"Ra soat module auth","agentType":"code-reviewer"}' } }] }),
+      '[DONE]',
+    ]);
+  };
+  try {
+    const { buildBody } = await import('./core.mjs');
+    const emitter = new BufferEmitter({ model: 'claude-x' });
+    const gw = buildBody('USER_QUERY', { query: 'ra soat ho em', conversationId: null });
+    await runGateway('faketoken', gw, emitter, { conversationId: 'conv_sub', key: 'ksub', model: 'claude-x', opts: { workingDir: null, pmModelKey: null, claudeTools: CT_TASK, thinking: null }, round: 0 });
+    const msg = emitter.toMessage();
+    assert.equal(msg.stop_reason, 'tool_use');
+    const tu = msg.content.find((b) => b.type === 'tool_use');
+    assert.ok(tu, 'co tool_use block');
+    assert.equal(tu.name, 'Task');
+    assert.equal(tu.input.prompt, 'Ra soat module auth');
+    assert.equal(tu.input.subagent_type, 'code-reviewer');
   } finally { globalThis.fetch = orig; }
 });
 
