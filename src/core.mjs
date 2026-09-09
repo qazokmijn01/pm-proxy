@@ -29,22 +29,6 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function readToken() { try { return fs.readFileSync(TOKEN_CACHE, 'utf8').trim() || null; } catch { return null; } }
 export function saveToken(t) { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.writeFileSync(TOKEN_CACHE, t, { mode: 0o600 }); }
-// Quy tac rieng cua nguoi dung gui sang gateway. He thong prompt cua Claude Code KHONG di
-// qua duoc (gateway khong co o 'system'; nhoi vao cac truong ngu canh thi model tu choi vi
-// nghi la prompt-injection) -> kenh hop le duy nhat la input.query, va tran QUERY_CAP la
-// 8500 ky tu. Vi vay dung mot file NGAN do nguoi dung tu soan thay vi bung CLAUDE.md.
-export const RULES_FILE = path.join(CACHE_DIR, 'rules.md');
-export const RULES_MAX = Number(process.env.PM_RULES_MAX || 4000);
-
-/** Noi dung rules.md, da cat theo RULES_MAX. Khong co file -> ''. */
-export function readUserRules() {
-  try {
-    const t = fs.readFileSync(RULES_FILE, 'utf8').trim();
-    if (!t) return '';
-    return t.length > RULES_MAX ? t.slice(0, RULES_MAX) + '\n...(cat bot: rules.md dai qua ' + RULES_MAX + ' ky tu)' : t;
-  } catch { return ''; }
-}
-
 export function loadTemplate() { try { return JSON.parse(fs.readFileSync(TEMPLATE_FILE, 'utf8')); } catch { return null; } }
 export function saveTemplate(cap) { fs.writeFileSync(TEMPLATE_FILE, JSON.stringify(cap, null, 2)); }
 

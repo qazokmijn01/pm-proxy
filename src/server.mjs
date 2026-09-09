@@ -18,7 +18,7 @@
  */
 import http from 'node:http';
 import {
-  GATEWAY, APP_VERSION_FALLBACK, readToken, loadTemplate, buildBody, listModels, readUserRules, RULES_FILE,
+  GATEWAY, APP_VERSION_FALLBACK, readToken, loadTemplate, buildBody, listModels,
 } from './core.mjs';
 import { applySession } from './session.mjs';
 import {
@@ -35,6 +35,7 @@ import {
 } from './translate.mjs';
 import { cap, capFull } from './capture.mjs';
 import { isMcpTool, callMcpTool, listMcpTools } from './mcp.mjs';
+import { readUserRules, ensureRules, RULES_FILE } from './rules.mjs';
 import { spawn as _spawn } from 'node:child_process';
 
 const PORT = Number(process.env.PM_ANTHROPIC_PORT || 8788);
@@ -667,8 +668,17 @@ export function startServer(port = PORT, host = HOST) {
     server.listen(port, host, () => {
       log(`nghe tai http://${host}:${port}  (gateway ${GATEWAY})`);
       log(`token=${readToken() ? 'co' : 'KHONG'} - template=${loadTemplate() ? 'co' : 'KHONG'}`);
-      const _rules = readUserRules();
-      log(_rules ? `rules=${_rules.length} ky tu (${RULES_FILE})` : `rules=KHONG (tao ${RULES_FILE} de gui quy tac rieng sang gateway)`);
+      // Sinh lai rules.md neu ~/.claude/CLAUDE.md hoac ~/.claude/rules/ da doi. Chay nen:
+      // hong hay cham deu khong duoc chan proxy khoi dong.
+      ensureRules()
+        .then((r) => {
+          if (r.action === 'written') log(`rules=da sinh lai (${r.reason}) - ${readUserRules().length} ky tu (${RULES_FILE})`);
+          else if (r.action === 'failed') log(`rules=KHONG sinh lai duoc (${r.reason}), giu ban cu`);
+          else if (r.reason === 'user') log(`rules=ban tu viet tay, khong ghi de (${RULES_FILE})`);
+          else if (r.reason === 'no-source') log('rules=KHONG co nguon ~/.claude/CLAUDE.md');
+          else log(`rules=${readUserRules().length} ky tu, khop nguon (${RULES_FILE})`);
+        })
+        .catch(() => {});
       log('Tro Claude Code:  set ANTHROPIC_BASE_URL=http://' + host + ':' + port + '  &&  set ANTHROPIC_API_KEY=pm-proxy  &&  claude');
       resolve(server);
     });

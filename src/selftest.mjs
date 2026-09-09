@@ -427,6 +427,46 @@ ok('extractAskUserAnswer: response > answers > raw', () => {
   assert.equal(extractAskUserAnswer('plain'), 'plain');
 });
 
+console.log('\n# rules.md: sinh lai khi nguon doi, khong de ban tu viet tay');
+{
+  const os2 = await import('node:os');
+  const fs2 = await import('node:fs');
+  const path2 = await import('node:path');
+  const R = await import('./rules.mjs');
+  const tmp = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'pmrules-'));
+  const f = path2.join(tmp, 'rules.md');
+  const readHash = (txt) => { fs2.writeFileSync(f, txt); const m = fs2.readFileSync(f, 'utf8').slice(0, 200).match(/^<!-- pm-proxy:auto source=([a-f0-9]+) -->/); return m ? m[1] : null; };
+
+  ok('van tay doi khi noi dung nguon doi', () => {
+    const a = path2.join(tmp, 'a.md'), b = path2.join(tmp, 'b.md');
+    fs2.writeFileSync(a, 'quy tac 1'); fs2.writeFileSync(b, 'quy tac 2');
+    const h1 = R.sourceHash([a, b]);
+    fs2.writeFileSync(b, 'quy tac 2 - da sua');
+    assert.notEqual(R.sourceHash([a, b]), h1, 'sua file => hash phai doi');
+    fs2.writeFileSync(b, 'quy tac 2 - da sua');
+    assert.equal(R.sourceHash([a, b]), R.sourceHash([a, b]), 'khong sua => hash on dinh');
+  });
+
+  ok('nhan dien ban tu sinh vs ban nguoi dung tu viet', () => {
+    assert.equal(readHash('<!-- pm-proxy:auto source=abc123 -->\nnoi dung'), 'abc123', 'ban tu sinh: doc duoc hash');
+    assert.equal(readHash('# Quy tac cua toi\n- luon tieng Viet'), null, 'ban tu viet tay: khong co hash => khong de');
+  });
+
+  ok('joinSources: bo khoi code, ghep theo uu tien', () => {
+    const a = path2.join(tmp, 'c.md');
+    fs2.writeFileSync(a, 'giu dong nay\n```js\nconst x = 1; // phai bi bo\n```\ncon dong nay');
+    const out = R.joinSources([a]);
+    assert.ok(out.includes('giu dong nay') && out.includes('con dong nay'));
+    assert.ok(!out.includes('const x = 1'), 'khoi code bi loai khoi phan gui di');
+  });
+
+  ok('readUserRules: boc het header comment, chi tra quy tac', () => {
+    assert.ok(typeof R.readUserRules() === 'string');
+  });
+
+  fs2.rmSync(tmp, { recursive: true, force: true });
+}
+
 console.log('\n# Gateway GIA - roundtrip day du (mock fetch, khong ton credit)');
 // Helper: dung "res" gia co body.getReader() phat cac dong SSE Postman.
 function sseRes(lines) {
