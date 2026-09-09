@@ -278,6 +278,17 @@ ok('card: co Task => co huong dan uy nhiem sub-agent (keu goi chay dong thoi)', 
   assert.ok(/KHONG dung cho viec vat/.test(card), 'co chan lam dung');
 });
 
+ok('card: co userRules => chen quy tac, ghi ro nguon la nguoi dung', () => {
+  const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Read' }]), userRules: 'Luon tra loi bang TIENG VIET.' });
+  assert.ok(card.includes('Luon tra loi bang TIENG VIET.'), 'giu nguyen van quy tac');
+  assert.ok(/nguoi dung \(chu phien lam viec\) dat ra/.test(card), 'noi ro nguon goc de model khong coi la injection');
+});
+
+ok('card: khong co userRules => khong chen gi them', () => {
+  const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Read' }]) });
+  assert.ok(!/QUY TAC BAT BUOC/.test(card));
+});
+
 ok('card: client khong co Task/Agent => KHONG nhac sub-agent', () => {
   const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Read' }]) });
   assert.ok(!card.includes(SUBAGENT_TOOL));

@@ -18,7 +18,7 @@
  */
 import http from 'node:http';
 import {
-  GATEWAY, APP_VERSION_FALLBACK, readToken, loadTemplate, buildBody, listModels,
+  GATEWAY, APP_VERSION_FALLBACK, readToken, loadTemplate, buildBody, listModels, readUserRules, RULES_FILE,
 } from './core.mjs';
 import { applySession } from './session.mjs';
 import {
@@ -599,7 +599,7 @@ async function handleMessages(req, res, body) {
         const ctxBlock = rebuildTranscript(prior, budget);
         if (ctxBlock) { query = CTX_HEADER + ctxBlock + CTX_SEP + cur; cap({ dir: 'context_rebuilt', from: 'user_query', priorMsgs: prior.length, chars: ctxBlock.length }); dbg('mat session -> dung lai ngu canh tu', prior.length, 'message (user_query)'); }
       } else {
-        query = buildToolCard({ workingDir, claudeToolNames: claudeTools }) + '\n\n' + query; // card 1 lan dau hoi thoai
+        query = buildToolCard({ workingDir, claudeToolNames: claudeTools, userRules: readUserRules() }) + '\n\n' + query; // card 1 lan dau hoi thoai
       }
     }
     gwBody = buildBody('USER_QUERY', { query: query.slice(0, QUERY_CAP), conversationId: conversationId || null });
@@ -667,6 +667,8 @@ export function startServer(port = PORT, host = HOST) {
     server.listen(port, host, () => {
       log(`nghe tai http://${host}:${port}  (gateway ${GATEWAY})`);
       log(`token=${readToken() ? 'co' : 'KHONG'} - template=${loadTemplate() ? 'co' : 'KHONG'}`);
+      const _rules = readUserRules();
+      log(_rules ? `rules=${_rules.length} ky tu (${RULES_FILE})` : `rules=KHONG (tao ${RULES_FILE} de gui quy tac rieng sang gateway)`);
       log('Tro Claude Code:  set ANTHROPIC_BASE_URL=http://' + host + ':' + port + '  &&  set ANTHROPIC_API_KEY=pm-proxy  &&  claude');
       resolve(server);
     });

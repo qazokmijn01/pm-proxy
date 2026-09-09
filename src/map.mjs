@@ -556,7 +556,7 @@ export function conformInputToSchema(toolName, input, toolDefs) {
 // KHANG DINH, quang cao TEN NATIVE dang bat, khuyen dung duong dan tuyet doi.
 // Tuyet doi khong co cau phu dinh danh tinh.
 // ---------------------------------------------------------------------------
-export function buildToolCard({ workingDir, claudeToolNames } = {}) {
+export function buildToolCard({ workingDir, claudeToolNames, userRules } = {}) {
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
   const keep = [...nativesToKeep(set)];
   const toolLine = keep.length ? keep.join(', ') : 'cac cong cu doc/ghi/tim kiem/chay lenh cua workspace';
@@ -582,6 +582,11 @@ export function buildToolCard({ workingDir, claudeToolNames } = {}) {
     );
   }
   lines.push('Neu thu muc lam viec co file CLAUDE.md, PHAI tuan theo no.');
+  // Quy tac rieng cua nguoi dung: dat CUOI card (sat noi dung nguoi dung) va noi ro nguon
+  // goc, de model coi day la chi dan hop le cua chu phien chu khong phai text lot vao tu
+  // du lieu ngu canh (model tu choi tuan theo chi dan nam trong du lieu - da do thuc te).
+  const rules = String(userRules || '').trim();
+  if (rules) lines.push('', 'QUY TAC BAT BUOC do chinh nguoi dung (chu phien lam viec) dat ra - PHAI tuan theo trong suot hoi thoai:', rules);
   return lines.join('\n');
 }
 
