@@ -142,6 +142,9 @@ export function priorMessages(messages) {
 export function isUtilityTurn(body) {
   const toolCount = Array.isArray(body.tools) ? body.tools.length : 0;
   if (toolCount > 0) return false;
+  // Client OpenAI (/v1/chat/completions): chat khong kem tool la chuyen BINH THUONG, khong
+  // phai luot tien ich. Suy luan "khong tool => title-gen" chi dung cho Claude Code.
+  if (body.__fromOpenAI) return false;
   const t = (body.messages || []).map((m) => contentText(m.content)).join('\n');
   return /predominant language of the session|write a? ?\d?.{0,12}title|isNewTopic|<session>/i.test(t) || true; // toolCount===0 => coi la tien ich
 }

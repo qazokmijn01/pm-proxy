@@ -420,11 +420,20 @@ export function subagentThirdParty(claudeToolNames) {
 }
 
 /** Cac native Postman NEN giu, dua tren bo tool Claude Code khai. */
+export function hasCapability(set, cap) {
+  if (set.has(cap)) return true;
+  const alias = CAP_EQUIV[cap];
+  return !!(alias && alias.some((n) => set.has(String(n).toLowerCase())));
+}
+
 export function nativesToKeep(claudeToolNames) {
   const keep = new Set();
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
   for (const [claude, natives] of Object.entries(CLAUDE_TO_NATIVES)) {
-    if (set.has(claude)) natives.forEach((n) => keep.add(n));
+    // Xet theo NANG LUC, khong theo ten chuan: client co the goi tool doc file la 'read_file'
+    // hay 'cat' thay vi 'Read'. Neu chi so ten chuan thi ta tuong client khong doc duoc file
+    // va cam sach tool cua gateway -> model danh tra loi chay. (adaptToClient lo phan doi ten.)
+    if (hasCapability(set, claude)) natives.forEach((n) => keep.add(n));
   }
   return keep;
 }

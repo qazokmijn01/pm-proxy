@@ -12,10 +12,11 @@ import assert from 'node:assert';
 import {
   pickArg, mapPostmanToolToClaude, excludedToolsFor, buildToolCard, mapModel, claudeToolSet,
   conformToolName, conformInputToSchema,
-  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL,
+  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL, nativesToKeep,
 } from './map.mjs';
+import { toAnthropicBody, toOpenAIResponse } from './openai.mjs';
 import { AnthropicSSE } from './sse.mjs';
-import { analyzeRequest, buildToolResponses, extractAskUserAnswer, rebuildTranscript, priorMessages } from './translate.mjs';
+import { analyzeRequest, buildToolResponses, extractAskUserAnswer, rebuildTranscript, priorMessages, isUtilityTurn } from './translate.mjs';
 import { runGateway, runGatewayResilient, thinkingFlag, prepBody, BufferEmitter } from './server.mjs';
 import { loadTemplate } from './core.mjs';
 import { recordToolUse, getToolUse } from './sessions.mjs';
@@ -425,6 +426,74 @@ ok('extractAskUserAnswer: response > answers > raw', () => {
   assert.equal(extractAskUserAnswer(JSON.stringify({ response: 'freetext' })), 'freetext');
   assert.equal(extractAskUserAnswer(JSON.stringify({ answers: { q: 'A' } })), 'A');
   assert.equal(extractAskUserAnswer('plain'), 'plain');
+});
+
+console.log('\n# Tuong thich OpenAI (/v1/chat/completions)');
+ok('request OpenAI -> Anthropic: system gop lai, tool_calls -> tool_use, role tool -> tool_result', () => {
+  const b = toAnthropicBody({
+    model: 'x', stream: true,
+    messages: [
+      { role: 'system', content: 'quy tac 1' },
+      { role: 'system', content: 'quy tac 2' },
+      { role: 'user', content: 'doc file di' },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{"path":"/a.txt"}' } }] },
+      { role: 'tool', tool_call_id: 'call_1', content: 'noi dung file' },
+    ],
+    tools: [{ type: 'function', function: { name: 'read_file', description: 'doc', parameters: { type: 'object', properties: { path: {} } } } }],
+  });
+  assert.equal(b.system, 'quy tac 1\n\nquy tac 2', 'gop moi system message');
+  assert.equal(b.stream, true);
+  assert.equal(b.messages[0].role, 'user');
+  const asst = b.messages[1];
+  assert.equal(asst.role, 'assistant');
+  assert.equal(asst.content[0].type, 'tool_use');
+  assert.equal(asst.content[0].name, 'read_file');
+  assert.deepEqual(asst.content[0].input, { path: '/a.txt' }, 'arguments (chuoi JSON) -> input (object)');
+  const toolMsg = b.messages[2];
+  assert.equal(toolMsg.role, 'user', 'OpenAI tach role tool rieng; Anthropic long trong user');
+  assert.equal(toolMsg.content[0].type, 'tool_result');
+  assert.equal(toolMsg.content[0].tool_use_id, 'call_1');
+  assert.equal(b.tools[0].input_schema.properties.path !== undefined, true, 'parameters -> input_schema');
+  assert.equal(b.__fromOpenAI, true, 'danh dau nguon de khong bi coi la luot tien ich');
+});
+
+ok('request OpenAI: content dang mang [{type:text}] -> chuoi', () => {
+  const b = toAnthropicBody({ messages: [{ role: 'user', content: [{ type: 'text', text: 'xin' }, { type: 'text', text: ' chao' }] }] });
+  assert.equal(b.messages[0].content, 'xin chao');
+});
+
+ok('response Anthropic -> OpenAI: tool_use -> tool_calls, stop_reason -> finish_reason', () => {
+  const out = toOpenAIResponse({
+    content: [{ type: 'text', text: 'de em doc' }, { type: 'tool_use', id: 'tu_1', name: 'read_file', input: { path: '/a.txt' } }],
+    stop_reason: 'tool_use',
+    usage: { input_tokens: 10, output_tokens: 5 },
+  }, 'model-x');
+  assert.equal(out.object, 'chat.completion');
+  assert.equal(out.choices[0].finish_reason, 'tool_calls');
+  const tc = out.choices[0].message.tool_calls[0];
+  assert.equal(tc.type, 'function');
+  assert.equal(tc.function.name, 'read_file');
+  assert.equal(tc.function.arguments, '{"path":"/a.txt"}', 'input (object) -> arguments (chuoi JSON)');
+  assert.equal(out.usage.total_tokens, 15);
+});
+
+ok('response: end_turn -> stop, max_tokens -> length', () => {
+  assert.equal(toOpenAIResponse({ content: [{ type: 'text', text: 'a' }], stop_reason: 'end_turn' }).choices[0].finish_reason, 'stop');
+  assert.equal(toOpenAIResponse({ content: [{ type: 'text', text: 'a' }], stop_reason: 'max_tokens' }).choices[0].finish_reason, 'length');
+});
+
+ok('luot tien ich: chi ap cho Claude Code, KHONG ap cho client OpenAI', () => {
+  const noTools = { messages: [{ role: 'user', content: 'chao' }] };
+  assert.equal(isUtilityTurn(noTools), true, 'Claude Code khong tool => luot tien ich (title-gen)');
+  assert.equal(isUtilityTurn({ ...noTools, __fromOpenAI: true }), false, 'OpenAI chat khong tool la BINH THUONG -> phai di gateway');
+});
+
+ok('nhan dien nang luc theo ten phi chuan (read_file, cat, exec...)', () => {
+  assert.ok(nativesToKeep(claudeToolSet([{ name: 'read_file' }])).has('readFile'), 'read_file => van giu native readFile');
+  assert.ok(nativesToKeep(claudeToolSet([{ name: 'exec' }])).has('executeShellCommand'), 'exec => van giu executeShellCommand');
+  assert.ok(!nativesToKeep(claudeToolSet([{ name: 'khong_lien_quan' }])).has('readFile'));
+  const ex = excludedToolsFor(claudeToolSet([{ name: 'read_file' }]), []);
+  assert.ok(!ex.includes('readFile'), 'khong duoc cam readFile khi client CO kha nang doc file');
 });
 
 console.log('\n# rules.md: sinh lai khi nguon doi, khong de ban tu viet tay');

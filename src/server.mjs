@@ -36,6 +36,7 @@ import {
 import { cap, capFull } from './capture.mjs';
 import { isMcpTool, callMcpTool, listMcpTools } from './mcp.mjs';
 import { readUserRules, ensureRules, RULES_FILE } from './rules.mjs';
+import { handleChatCompletions, toOpenAIModels } from './openai.mjs';
 import { spawn as _spawn } from 'node:child_process';
 
 const PORT = Number(process.env.PM_ANTHROPIC_PORT || 8788);
@@ -644,8 +645,10 @@ function handleCountTokens(res, body) {
 async function handleModels(res) {
   let models = [];
   try { const ml = await listModels(); models = (ml && ml.models) || []; } catch {}
-  const data = models.map((m) => ({ type: 'model', id: m.key, display_name: m.name || m.key }));
-  sendJson(res, 200, { data, has_more: false });
+  // Mot route phuc vu ca hai dang: Anthropic doc type/display_name, OpenAI doc object/owned_by.
+  const oai = toOpenAIModels(models);
+  const data = oai.data.map((m, i) => ({ ...m, type: 'model', display_name: (models[i] && models[i].name) || m.id }));
+  sendJson(res, 200, { object: 'list', data, has_more: false });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -654,6 +657,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && (url === '/health' || url === '/')) return sendJson(res, 200, { ok: true, service: 'pm-ai-proxy', gateway: GATEWAY, token: !!readToken(), template: !!loadTemplate() });
     if (req.method === 'GET' && url === '/v1/models') return handleModels(res);
     if (req.method === 'POST' && url === '/v1/messages') return handleMessages(req, res, await readJsonBody(req));
+    // Tuong thich OpenAI: dich request/response, dung chung duong ong cua /v1/messages.
+    if (req.method === 'POST' && (url === '/v1/chat/completions' || url === '/chat/completions')) return handleChatCompletions(req, res, await readJsonBody(req), handleMessages);
     if (req.method === 'POST' && (url === '/v1/messages/count_tokens' || url === '/v1/messages/count-tokens')) return handleCountTokens(res, await readJsonBody(req));
     anthropicError(res, 404, 'not_found_error', `No route ${req.method} ${url}`);
   } catch (e) {
