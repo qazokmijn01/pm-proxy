@@ -441,14 +441,23 @@ ok('subagent: client khong khai run_in_background => tu cat bo (schema strict)',
   assert.equal(input.prompt, 'b');
 });
 
-ok('subagent: KHONG khai tool ao cho tool uy nhiem chua biet schema', () => {
-  // openclaw co 'subagents' nhung do la tool DA HANH DONG (mac dinh action='list'):
-  // gui {description, prompt} vao thi no tra ve danh sach rong chu khong chay task.
-  // Tha khong co tinh nang con hon co ma hong - model van tu lam duoc bang exec.
+ok('subagent: "subagents" la tool QUAN LY, khong duoc coi la tool tao sub-agent', () => {
+  // Schema that: subagents {action, recentMinutes, taskId} - mac dinh action='list'.
+  // Gui {description, prompt} vao se nhan lai danh sach rong chu khong chay gi.
   const oc = claudeToolSet([{ name: 'exec' }, { name: 'read' }, { name: 'subagents' }]);
-  assert.equal(subagentThirdParty(oc), null, 'chua chup duoc schema that => khong khai');
-  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, oc);
-  assert.equal(r.kind, 'drop', 'co lot qua thi cung phai drop, khong goi bua');
+  assert.equal(subagentThirdParty(oc), null, 'chi co tool quan ly => khong khai');
+  assert.equal(mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, oc).kind, 'drop');
+});
+
+ok('subagent: openclaw sessions_spawn -> doi sang khoa task/taskName', () => {
+  // Schema that: sessions_spawn { task* , taskName, label, cwd, ... }
+  const oc = claudeToolSet([{ name: 'exec' }, { name: 'subagents' }, { name: 'sessions_spawn' }]);
+  assert.ok(subagentThirdParty(oc), 'co tool tao sub-agent that => phai khai');
+  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'Ra soat auth', prompt: 'Doc src/auth' }, oc);
+  assert.equal(r.name, 'sessions_spawn');
+  assert.equal(r.input.task, 'Doc src/auth', 'prompt -> task (khoa BAT BUOC cua openclaw)');
+  assert.equal(r.input.taskName, 'Ra soat auth');
+  assert.equal(r.input.prompt, undefined, 'khong duoc de sot khoa cua Claude Code');
 });
 
 ok('subagent: van khai binh thuong cho client co Task/Agent (schema da biet)', () => {

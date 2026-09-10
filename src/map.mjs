@@ -53,12 +53,11 @@ const CAP_EQUIV = {
   webfetch: ['WebFetch', 'web_fetch', 'fetch_url', 'file_fetch'],
   websearch: ['WebSearch', 'web_search'],
   askuserquestion: ['AskUserQuestion', 'ask_user', 'askuser'],
-  // CHI liet ke tool ma ta BIET CHAC schema {description, prompt, subagent_type}.
-  // openclaw co 'subagents'/'sessions_spawn' nhung do la tool DA HANH DONG (mac dinh
-  // action='list'): gui thang input cua ta vao thi no tra ve danh sach rong chu khong
-  // chay task. Chua chup duoc schema that -> khong khai tool ao cho client do, de model
-  // tu lam bang exec/read/edit (no von co san). Xem cap 'toolset' trong capture.
-  task: ['Task', 'Agent', 'task', 'agent'],
+  // CHI liet ke tool THUC SU tao sub-agent. openclaw co ca hai loai, dung nham la hong:
+  //   subagents      {action, recentMinutes, taskId} - chi QUAN LY/liet ke (mac dinh action='list')
+  //   sessions_spawn {task*, taskName, label, cwd...} - moi la tool TAO sub-agent
+  // (schema chup tu wire, xem cap 'toolset').
+  task: ['Task', 'Agent', 'task', 'agent', 'sessions_spawn'],
 };
 function adaptToClient(out, set) {
   if (!out || !out.name) return out;
@@ -99,6 +98,13 @@ function adaptToClient(out, set) {
     const sh = anyShell();
     if (sh) { let cmd = 'grep -rniE ' + shq(String(input.pattern || '')) + ' ' + shq(String(input.path || '.')); if (input.glob) cmd += ' --include=' + shq(String(input.glob)); return { name: sh, input: { command: cmd } }; }
     return out;
+  }
+  if (cap === 'task' && target && String(target).toLowerCase() === 'sessions_spawn') {
+    // openclaw dung khoa khac han: task = noi dung cong viec, taskName = nhan ngan.
+    // Gui thang {description, prompt} vao se roi vao nhanh mac dinh va khong chay gi.
+    const inp = { task: String(input.prompt || input.description || '') };
+    if (input.description) inp.taskName = String(input.description).slice(0, 60);
+    return { name: target, input: inp };
   }
   if (target) return { name: target, input };
   return out;
@@ -368,6 +374,7 @@ export const CLAUDE_TO_NATIVES = {
   askuserquestion: ['askUser'],
   task: ['SubAgent'],
   agent: ['SubAgent'],
+  sessions_spawn: ['SubAgent'],   // openclaw
 };
 
 // Moi native Postman ta biet cach dich (dung de tinh excludedTools).
