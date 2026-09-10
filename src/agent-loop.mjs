@@ -34,7 +34,10 @@ function runTool(name, input) {
   try {
     if (name === 'exec' || name === 'Bash') {
       const cmd = input.command;
-      const out = execSync(cmd, { cwd: input.cwd || process.cwd(), encoding: 'utf8', timeout: 60000, windowsHide: true, shell: 'powershell.exe' });
+      // Mo phong DUNG shell that cua tung client: Claude Code Bash la Git Bash (POSIX),
+      // openclaw exec la PowerShell. Dung sai shell thi ket qua test vo nghia.
+      const shell = KIND === 'claudecode' ? 'bash.exe' : 'powershell.exe';
+      const out = execSync(cmd, { cwd: input.cwd || process.cwd(), encoding: 'utf8', timeout: 60000, windowsHide: true, shell });
       return { ok: true, ms: Date.now() - t0, out: String(out).slice(0, 2000) };
     }
     if (name === 'read' || name === 'Read') {
