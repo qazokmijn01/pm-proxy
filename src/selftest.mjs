@@ -290,6 +290,15 @@ ok('card: khong co userRules => khong chen gi them', () => {
   assert.ok(!/QUY TAC BAT BUOC/.test(card));
 });
 
+ok('card: client goi ten khac (openclaw sessions_spawn) => VAN co huong dan uy nhiem', () => {
+  // Loi that: card tu so 'task'/'agent' trong khi bang nang luc da biet sessions_spawn.
+  // Hau qua: proxy CO khai tool ao nhung card khong huong dan -> model noi "khong co cong cu uy nhiem".
+  const oc = claudeToolSet([{ name: 'exec' }, { name: 'read' }, { name: 'sessions_spawn' }]);
+  const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: oc });
+  assert.ok(card.includes(SUBAGENT_TOOL), 'thieu huong dan => model tuong khong co cong cu');
+  assert.ok(!!subagentThirdParty(oc), 'va tool ao cung phai duoc khai');
+});
+
 ok('card: client khong co Task/Agent => KHONG nhac sub-agent', () => {
   const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Read' }]) });
   assert.ok(!card.includes(SUBAGENT_TOOL));

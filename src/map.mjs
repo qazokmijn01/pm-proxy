@@ -602,7 +602,7 @@ export function buildToolCard({ workingDir, claudeToolNames, userRules } = {}) {
   // SUBAGENT: tool nay do proxy tu cap (subagentThirdParty) nen gateway khong co mo ta san
   // trong huan luyen -> phai noi RO khi nao dung, keo model bo qua. Nguong dat o "viec lon
   // hoac >=2 viec doc lap" de tranh de subagent cho tung thao tac vat (tot credit).
-  if (set.has('task') || set.has('agent')) {
+  if (hasCapability(set, 'task')) {          // dung chung bang nang luc (DRY) - client co the goi ten khac
     lines.push(
       'UY NHIEM SUB-AGENT - cong cu ' + SUBAGENT_TOOL + ' (tham so: description ngan 3-5 tu, prompt tu chua):',
       '- BAT BUOC dung khi lan luot nay co TU 2 VIEC DOC LAP tro len (vi du: ra soat nhieu module khac nhau, tim kiem tren nhieu thu muc, kiem tra nhieu gia thuyet). Phat NHIEU tool call ' + SUBAGENT_TOOL + ' trong CUNG mot luot de chung chay DONG THOI, dung lam tuan tu.',
