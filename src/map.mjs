@@ -32,6 +32,8 @@ export function pickArg(args, ...aliases) {
 
 // Boc chuoi cho shell (single-quote an toan cho POSIX; Claude Code Bash chay qua shell).
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+// Shell cua may client: quyet dinh sinh cu phap POSIX hay PowerShell.
+const isPwsh = () => /pwsh|powershell/i.test(String(process.env.PM_SHELL || (process.platform === 'win32' ? 'powershell' : 'posix')));
 
 // ---------------------------------------------------------------------------
 // Bang map: Postman native  ->  Claude Code. (docs/tool-mapping.md #5)
@@ -58,6 +60,9 @@ const CAP_EQUIV = {
   //   sessions_spawn {task*, taskName, label, cwd...} - moi la tool TAO sub-agent
   // (schema chup tu wire, xem cap 'toolset').
   task: ['Task', 'Agent', 'task', 'agent', 'sessions_spawn'],
+  // Tool CHO sub-agent chay xong. Client bat dong bo (openclaw) tra ve ma tac vu chu
+  // khong tra ket qua -> khong co tool nay thi model be tac va bo cuoc.
+  taskwait: ['agents_wait', 'sessions_wait', 'await_agent', 'wait_for_agents'],
 };
 function adaptToClient(out, set, opts = {}) {
   if (!out || !out.name) return out;
@@ -84,8 +89,7 @@ function adaptToClient(out, set, opts = {}) {
     if (sh) {
       const nm = String(input.pattern || '').replace(/\*\*\//g, '').replace(/^\*+|\*+$/g, '');
       const base = String(input.path || '.');
-      const isPwsh = /pwsh|powershell/i.test(String(process.env.PM_SHELL || (process.platform === 'win32' ? 'powershell' : 'posix')));
-      const cmd = isPwsh
+      const cmd = isPwsh()
         ? (nm ? ('Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath ' + shq(base) + ' -Filter ' + shq('*' + nm + '*') + ' | Select-Object -ExpandProperty FullName')
               : ('Get-ChildItem -Force -LiteralPath ' + shq(base) + ' | Select-Object -ExpandProperty FullName'))
         : (nm ? ('find ' + shq(base) + ' -iname ' + shq('*' + nm + '*')) : ('ls -la ' + shq(base)));
@@ -127,7 +131,12 @@ const TRANSLATORS = {
   },
   listDirectory(a) {
     const dir = pickArg(a, 'relativePath', 'path', 'directory') || '.';
-    return { name: 'Bash', input: { command: `ls -la -- ${shq(dir)}`, description: `List ${dir}` } };
+    // 'ls -la' la cu phap POSIX; tren PowerShell 'ls' la alias Get-ChildItem va bao loi
+    // "A parameter cannot be found that matches parameter name 'la'" -> model lap lai vo han.
+    const cmd = isPwsh()
+      ? `Get-ChildItem -Force -LiteralPath ${shq(dir)} | Select-Object Mode,Length,LastWriteTime,Name`
+      : `ls -la -- ${shq(dir)}`;
+    return { name: 'Bash', input: { command: cmd, description: `List ${dir}` } };
   },
   searchInFiles(a) { return TRANSLATORS.searchFiles(a); },
   searchFiles(a) {
@@ -320,6 +329,14 @@ const TRANSLATORS = {
 // ---------------------------------------------------------------------------
 const MCP_TRANSLATORS = {
   delegate_subagent: (a) => TRANSLATORS.SubAgent(a),   // tool AO do proxy tu cap (xem subagentThirdParty)
+  await_subagent: (a) => {                            // tool AO: cho sub-agent bat dong bo xong
+    const raw = pickArg(a, 'ids', 'id', 'taskId', 'taskIds', 'sessionKey', 'sessionKeys');
+    if (!raw) return null;
+    const input = { ids: Array.isArray(raw) ? raw.map(String) : [String(raw)] };
+    const t = pickArg(a, 'timeoutSeconds', 'timeout');
+    if (t != null) input.timeoutSeconds = Number(t);
+    return { name: 'agents_wait', input };
+  },
   run_cmd: (a) => TRANSLATORS.executeShellCommand(a),
   search_content: (a) => TRANSLATORS.searchFiles(a),
   read_text_file: (a) => TRANSLATORS.readFile(a),
@@ -414,11 +431,12 @@ export function claudeToolSet(tools) {
 // ---------------------------------------------------------------------------
 export const SUBAGENT_SERVER = 'pm-proxy';
 export const SUBAGENT_TOOL = SUBAGENT_SERVER + '__local__delegate_subagent';
+export const SUBAGENT_WAIT_TOOL = SUBAGENT_SERVER + '__local__await_subagent';
 
 export function subagentThirdParty(claudeToolNames) {
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
   if (!hasCapability(set, 'task')) return null;   // dung chung bang nang luc (DRY)
-  return {
+  const tp = {
     [SUBAGENT_SERVER]: {
       serverConfig: { command: 'pm-ai-proxy-subagent', args: [] },
       tools: [{
@@ -437,6 +455,25 @@ export function subagentThirdParty(claudeToolNames) {
       }],
     },
   };
+  // Client bat dong bo: spawn tra ve ma tac vu, phai CHO moi co ket qua. Khong khai tool
+  // cho thi model nhan duoc moi "da khoi dong", tuong cong cu hong roi tu lam lay.
+  if (hasCapability(set, 'taskwait')) {
+    tp[SUBAGENT_SERVER].tools.push({
+      name: SUBAGENT_WAIT_TOOL,
+      description: 'Wait for previously delegated sub-agent tasks to finish and return their reports. Call this right after delegating when the delegation returned a task id instead of a result.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ids: { type: 'array', items: { type: 'string' }, description: 'Task ids returned by the delegation tool' },
+          timeoutSeconds: { type: 'number', description: 'How long to wait before giving up' },
+        },
+        required: ['ids'],
+        additionalProperties: false,
+        $schema: 'http://json-schema.org/draft-07/schema#',
+      },
+    });
+  }
+  return tp;
 }
 
 /** Cac native Postman NEN giu, dua tren bo tool Claude Code khai. */
@@ -613,6 +650,9 @@ export function buildToolCard({ workingDir, claudeToolNames, userRules } = {}) {
       '- KHONG dung cho viec vat: doc 1 file, chay 1 lenh, sua 1 cho da biet ro - tu lam nhanh hon.',
       '- Sub-agent KHONG thay hoi thoai nay: prompt phai tu chua (duong dan tuyet doi, muc tieu, dinh dang ket qua mong muon).',
       '- Nguoi dung yeu cau "uy nhiem" / "sub-agent" / "chay song song" => PHAI goi cong cu nay, khong tu lam.',
+    );
+    if (hasCapability(set, 'taskwait')) lines.push(
+      '- Neu ket qua tra ve chi la MA TAC VU (taskId / sessionKey / "da khoi dong") chu chua co bao cao: KHONG duoc ket luan la hong va KHONG duoc goi lai. PHAI goi ' + SUBAGENT_WAIT_TOOL + ' voi cac ma do de lay ket qua that.',
     );
   }
   lines.push('Neu thu muc lam viec co file CLAUDE.md, PHAI tuan theo no.');
