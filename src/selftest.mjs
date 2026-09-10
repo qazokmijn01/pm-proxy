@@ -458,6 +458,24 @@ ok('subagent: "subagents" la tool QUAN LY, khong duoc coi la tool tao sub-agent'
   assert.equal(mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, oc).kind, 'drop');
 });
 
+ok('subagent: sessions_spawn nhan cwd = thu muc du an dang lam', () => {
+  const oc = claudeToolSet([{ name: 'exec' }, { name: 'sessions_spawn' }]);
+  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, oc, { workingDir: 'C:/du/an' });
+  assert.equal(r.input.cwd, 'C:/du/an', 'thieu cwd => sub-agent lang le lam viec o thu muc khac');
+});
+
+ok('subagent: khong biet thu muc thi KHONG bia ra cwd', () => {
+  const oc = claudeToolSet([{ name: 'exec' }, { name: 'sessions_spawn' }]);
+  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, oc);
+  assert.equal('cwd' in r.input, false);
+});
+
+ok('subagent: Task/Agent khong co khoa cwd -> khong duoc them vao', () => {
+  const cc = claudeToolSet([{ name: 'Agent' }]);
+  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, cc, { workingDir: 'C:/du/an' });
+  assert.equal('cwd' in r.input, false, 'schema Claude Code khong co cwd');
+});
+
 ok('subagent: openclaw sessions_spawn -> doi sang khoa task/taskName', () => {
   // Schema that: sessions_spawn { task* , taskName, label, cwd, ... }
   const oc = claudeToolSet([{ name: 'exec' }, { name: 'subagents' }, { name: 'sessions_spawn' }]);

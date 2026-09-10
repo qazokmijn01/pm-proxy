@@ -59,7 +59,7 @@ const CAP_EQUIV = {
   // (schema chup tu wire, xem cap 'toolset').
   task: ['Task', 'Agent', 'task', 'agent', 'sessions_spawn'],
 };
-function adaptToClient(out, set) {
+function adaptToClient(out, set, opts = {}) {
   if (!out || !out.name) return out;
   const has = (n) => !!(set && typeof set.has === 'function' && set.has(String(n).toLowerCase()));
   if (has(out.name)) return out;
@@ -104,6 +104,9 @@ function adaptToClient(out, set) {
     // Gui thang {description, prompt} vao se roi vao nhanh mac dinh va khong chay gi.
     const inp = { task: String(input.prompt || input.description || '') };
     if (input.description) inp.taskName = String(input.description).slice(0, 60);
+    // Khong dat cwd thi sub-agent chay o thu muc mac dinh cua client, khong phai du an
+    // dang lam - no khong bao loi, chi lang le lam sai cho.
+    if (opts.workingDir) inp.cwd = String(opts.workingDir);
     return { name: target, input: inp };
   }
   if (target) return { name: target, input };
@@ -479,18 +482,18 @@ export function excludedToolsFor(claudeToolNames, templateExcluded = []) {
  *   { kind:'client', name, input }              -> phat tool_use cho Claude Code chay
  *   { kind:'drop', reason, syntheticResult }    -> proxy tu tra TOOL_RESPONSE, gateway chay tiep
  */
-export function mapPostmanToolToClaude(nativeName, rawArgs, claudeToolNames) {
+export function mapPostmanToolToClaude(nativeName, rawArgs, claudeToolNames, opts = {}) {
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
   // MCP filesystem/shell tools (no exact translator) -> Bash/Glob/Read/Write/Edit.
   const mcp0 = mcpFsTranslate(nativeName, rawArgs);
   if (mcp0) {
-    const mcp = adaptToClient(mcp0, set) || mcp0;
+    const mcp = adaptToClient(mcp0, set, opts) || mcp0;
     if (!set.has(mcp.name.toLowerCase())) return { kind: 'drop', reason: 'Client khong bat ' + mcp.name, syntheticResult: '[proxy] Bo qua ' + nativeName + ': client khong bat ' + mcp.name + '.' };
     return { kind: 'client', name: mcp.name, input: mcp.input };
   }
   const fn = TRANSLATORS[nativeName];
   if (fn) {
-    const out = adaptToClient(fn(rawArgs || {}), set);
+    const out = adaptToClient(fn(rawArgs || {}), set, opts);
     if (!out) return { kind: 'drop', reason: `Thieu tham so bat buoc cho ${nativeName}`, syntheticResult: `[proxy] Bo qua ${nativeName}: thieu tham so bat buoc.` };
     if (!set.has(out.name.toLowerCase())) {
       return { kind: 'drop', reason: `Client khong khai tool ${out.name}`, syntheticResult: `[proxy] Bo qua ${nativeName}: client Claude Code khong bat ${out.name}.` };

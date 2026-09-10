@@ -269,7 +269,7 @@ async function runGateway(token, body, emitter, ctx) {
       cap({ dir: 'mcp_exec', native: t.name, status: okr ? 'SUCCESS' : 'ERROR' });
       continue;
     }
-    const m = mapPostmanToolToClaude(t.name, args, ctx.opts.claudeTools);
+    const m = mapPostmanToolToClaude(t.name, args, ctx.opts.claudeTools, { workingDir: ctx.opts.workingDir });
     if (m.kind === 'client') {
       // Conform ten + khoa tham so sang dung schema client khai (file_path <-> path...).
       const claudeName = conformToolName(m.name, ctx.opts.claudeToolDefs);
