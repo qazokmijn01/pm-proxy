@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/claude-proxy.mjs",
     "harvest": "node src/harvest.mjs --timeout=30",
-    "test": "node src/selftest.mjs"
+    "test": "node src/selftest.mjs",
+    "test:e2e": "node src/e2e-openai.mjs"
   },
   "license": "ISC",
   "dependencies": {

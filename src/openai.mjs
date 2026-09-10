@@ -23,6 +23,9 @@ function oaiText(content) {
     return content.map((p) => {
       if (typeof p === 'string') return p;
       if (p && p.type === 'text') return p.text || '';
+      // Gateway Postman khong co duong nhan anh -> noi ro thay vi bo im lang, de model
+      // biet no dang thieu du lieu va hoi lai, thay vi doan bua.
+      if (p && (p.type === 'image_url' || p.type === 'image')) return '[nguoi dung co gui mot ANH, nhung moi truong nay khong xem duoc anh]';
       return '';
     }).join('');
   }
@@ -84,6 +87,11 @@ export function toAnthropicBody(oai = {}) {
   };
   if (sys.length) out.system = sys.join('\n\n');
   if (tools.length) out.tools = tools;
+  // tool_choice -> dang Anthropic; lop duoi (toolChoiceDirective) lo phan ep goi tool.
+  const tc = oai.tool_choice;
+  if (tc === 'none') out.tool_choice = { type: 'none' };
+  else if (tc === 'required' || tc === 'any') out.tool_choice = { type: 'any' };
+  else if (tc && typeof tc === 'object' && tc.function && tc.function.name) out.tool_choice = { type: 'tool', name: tc.function.name };
   return out;
 }
 
@@ -146,6 +154,7 @@ class BridgeRes {
     this.usage = { input_tokens: 0, output_tokens: 0 };
     this.text = '';
     this.headSent = false;
+    this.ended = false;     // da dong res that chua - moi ham ghi deu phai xet
   }
 
   writeHead(status, headers) {
@@ -155,12 +164,13 @@ class BridgeRes {
   }
 
   _head() {
-    if (this.headSent) return;
+    if (this.ended || this.headSent) return;
     this.headSent = true;
     this.res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
   }
 
   _chunk(delta, finish = null) {
+    if (this.ended) return;
     this._head();
     const payload = { id: this.id, object: 'chat.completion.chunk', created: nowSec(), model: this.model, choices: [{ index: 0, delta, finish_reason: finish }] };
     this.res.write('data: ' + JSON.stringify(payload) + '\n\n');
@@ -217,6 +227,7 @@ class BridgeRes {
   }
 
   _fail(status, message, type = 'server_error') {
+    if (this.ended) return;
     if (this.headSent) {                       // da bat dau stream -> chi con cach dong lai
       this.res.write('data: ' + JSON.stringify({ error: { message: String(message), type } }) + '\n\n');
       this.res.write('data: [DONE]\n\n');
@@ -227,9 +238,13 @@ class BridgeRes {
     this.res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) });
     this.res.end(b);
     this.headSent = true;
+    this.ended = true;
   }
 
   end(s) {
+    // Loi giua stream da dong res roi (vd gateway 500), nhung lop duoi van chay tiep va
+    // goi end() -> ghi sau khi dong => 'write after end' lam SAP ca tien trinh proxy.
+    if (this.ended) return;
     if (s) this.write(s);
 
     // Loi tu handleMessages (JSON dang Anthropic) -> loi dang OpenAI.
@@ -248,6 +263,7 @@ class BridgeRes {
         const b = JSON.stringify(out);
         this.res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) });
         this.res.end(b);
+        this.ended = true;
         return;
       }
       // Client doi stream nhung lop duoi tra gon 1 cuc -> phat lai thanh chunk.
@@ -282,9 +298,11 @@ class BridgeRes {
     });
     this.res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
     this.res.end(body);
+    this.ended = true;
   }
 
   _finishStream(finish, usage) {
+    if (this.ended) return;
     this._role();
     this._chunk({}, finish);
     if (this.includeUsage && usage) {

@@ -297,6 +297,7 @@ Bật `DEBUG_PROXY=1` sẽ thấy dòng `[pm-proxy:dbg] mcp thirdParty warmed: f
 | `PM_CAPTURE` | bật | `=0` để ngừng ghi file capture. |
 | `PM_MAX_ROUNDS` | `16` | Giới hạn số vòng tool mỗi lượt. |
 | `PM_QUERY_CAP` | `8500` | Giới hạn ký tự query gửi lên gateway. |
+| `PM_RULES_MAX` | `4000` | Giới hạn ký tự `rules.md` gửi kèm (xem mục 10). |
 | `PM_FORCE_MODEL` | — | Ép cứng model key phía Postman. |
 | `PM_SHELL` | `powershell` (Windows) | Shell dùng khi map lệnh chạy. |
 | `PM_APP_VERSION` | `12.22.6` | Header `x-app-version` fallback. |
@@ -312,6 +313,48 @@ Bật `DEBUG_PROXY=1` sẽ thấy dòng `[pm-proxy:dbg] mcp thirdParty warmed: f
 | `GET` | `/v1/models` | Danh sách model (map từ Postman). |
 | `POST` | `/v1/messages` | Endpoint chính, tương thích Anthropic. |
 | `POST` | `/v1/messages/count_tokens` | Đếm token. |
+| `POST` | `/v1/chat/completions` | Tương thích **OpenAI** (Cline, Roo, Continue, Cursor, opencode…). |
+
+`/v1/models` trả đủ khoá cho cả hai chuẩn nên client nào cũng đọc được.
+
+---
+
+## 8b. Tương thích OpenAI
+
+Trỏ client vào `http://127.0.0.1:8788/v1`, API key điền gì cũng được. Model để `claude-sonnet-4` / `claude-opus-4` (proxy tự map theo bậc), hoặc lấy id thật từ `/v1/models`.
+
+Hỗ trợ đầy đủ: chat thường, streaming, function calling hai chiều, `tool_choice` (`auto` / `none` / `required` / chỉ định tên tool), và `stream_options.include_usage`.
+
+Hai giới hạn cần biết:
+
+- **Ảnh không gửi được.** Gateway Postman không có đường nhận ảnh, nên proxy thay ảnh bằng một dòng ghi chú để model biết nó đang thiếu dữ liệu thay vì đoán bừa.
+- **`tool_choice` là ép mềm.** Gateway không có tham số này, nên proxy cắt tool (với `none`) hoặc chèn chỉ dẫn bắt buộc vào câu hỏi. Thực tế model tuân theo, nhưng đây không phải ràng buộc cứng ở tầng API.
+
+Chạy `npm run test:e2e` để tự kiểm tra toàn bộ đường OpenAI — dùng gateway giả nên **không tốn credit**.
+
+---
+
+## 8c. Quy tắc riêng của bạn (`rules.md`)
+
+System prompt của Claude Code **không** đi qua được gateway: trường `system` chỉ chứa vài dòng boilerplate, còn chỉ dẫn thật nằm trong các message `role:"system"` và khối `<system-reminder>` mà lớp dịch phải bỏ. Các trường ngữ cảnh của gateway cũng không dùng được — `availableSkills` / `mandatoryContext` bị bỏ qua, còn chỉ dẫn nhét vào mô tả thư mục thì model **từ chối** vì coi là prompt-injection.
+
+Kênh duy nhất model chịu nghe là câu hỏi. Nên proxy giữ một file ngắn và gửi kèm ở lượt đầu hội thoại:
+
+```
+%USERPROFILE%\.postman-agent-cliules.md
+```
+
+File này **tự sinh** từ `~/.claude/CLAUDE.md` + `~/.claude/rules/`, do chính model rút gọn (nó biết bỏ các quy tắc chỉ dành cho Claude Code như `plans/`, git, subagent). Proxy lưu vân tay của nguồn trong header file và chỉ sinh lại khi nguồn đổi — khởi động bình thường không tốn gì.
+
+Muốn tự viết tay: **xoá dòng header đầu tiên**, proxy sẽ không bao giờ ghi đè nữa. Muốn quay lại tự động: xoá file đi.
+
+---
+
+## 8d. Uỷ nhiệm sub-agent
+
+Gateway Postman không có công cụ uỷ nhiệm sub-agent. Proxy tự cấp một cái qua `clientTools.thirdParty` — đúng kênh mà Postman Desktop dùng để khai MCP — rồi dịch lời gọi thành công cụ sub-agent của client (`Task` / `Agent`), là bên thực sự chạy sub-agent.
+
+Chỉ khai khi client thật sự có công cụ đó; không có thì im lặng. Tool card hướng dẫn model uỷ nhiệm khi có **từ 2 việc độc lập trở lên** (phát nhiều lời gọi trong cùng một lượt để chạy đồng thời) và không dùng cho việc vặt.
 
 ---
 
@@ -391,7 +434,10 @@ pm-proxy/
     ├── sse.mjs               phát SSE đúng chuẩn Anthropic
     ├── sessions.mjs          lưu phiên, cwd đã học, tool_use_id, pending
     ├── capture.mjs           ghi log chẩn đoán
-    ├── selftest.mjs          39 test
+    ├── openai.mjs            lop tương thích OpenAI (/v1/chat/completions)
+    ├── rules.mjs             sinh & nạp rules.md (quy tắc riêng của bạn)
+    ├── selftest.mjs          test đơn vị (`npm test`)
+    ├── e2e-openai.mjs        test end-to-end đường OpenAI (`npm run test:e2e`)
     ├── nova-verify.mjs       5 test mapping
     └── .chat-template.json   template đã harvest (sinh ra, không commit)
 ```

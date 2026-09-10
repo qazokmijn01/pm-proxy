@@ -22,7 +22,7 @@ import {
 } from './core.mjs';
 import { applySession } from './session.mjs';
 import {
-  mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP, subagentThirdParty,
+  mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP, subagentThirdParty, toolChoiceDirective,
   conformToolName, conformInputToSchema,
 } from './map.mjs';
 import { AnthropicSSE, estimateTokens, genMessageId, THINKING_SIG } from './sse.mjs';
@@ -489,7 +489,9 @@ async function handleMessages(req, res, body) {
   // Luot tien ich (title-gen/quota, khong co tool) -> tra nhanh, KHONG dung gateway (khong dot credit).
   if (isUtilityTurn(body)) { const text = utilityReply(body); cap({ dir: 'utility', text }); return replyText(res, { stream, model: anthropicModel, text }); }
   const key = sessionKey(system, messages);
-  const claudeTools = claudeToolSet(body.tools);
+  // tool_choice: 'none' => coi nhu client khong khai tool nao (gateway se bi cat sach tool).
+  const toolChoice = toolChoiceDirective(body.tool_choice, claudeToolSet(body.tools));
+  const claudeTools = claudeToolSet(toolChoice.mode === 'none' ? [] : body.tools);
   let { dir: workingDir, source: cwdSource } = resolveWorkingDir(req, system);
   const sessCwd = getSession(key);
   if (!workingDir && sessCwd && sessCwd.cwd) { workingDir = sessCwd.cwd; cwdSource = 'probe-cache'; }
@@ -519,6 +521,8 @@ async function handleMessages(req, res, body) {
   cap({ dir: 'in', kind: turn.kind, model: anthropicModel, stream, toolCount: (body.tools || []).length, workingDir, msgCount: messages.length,
     msgs: messages.map((m) => ({ role: m.role, blocks: Array.isArray(m.content) ? m.content.map((b) => b.type || 'text') : 'string', preview: contentText(m.content).slice(0, 160) })) });
 
+  // tool_choice any/tool: gateway khong co tham so ep goi tool -> ep bang chi dan trong query.
+  if (toolChoice.hint && turn.kind === 'user_query') turn = { ...turn, text: toolChoice.hint + '\n' + (turn.text || '') };
   // An toan: khong bao gio gui USER_QUERY rong len gateway (bi 403 INPUT_VALIDATION_ERROR -> loap).
   if (turn.kind === 'user_query' && !String(turn.text || '').trim()) { cap({ dir: 'empty_query_skip' }); return replyText(res, { stream, model: anthropicModel, text: '' }); }
   // Chua biet cwd -> HOI client bang 1 tool_use. Chi thu MOT lan moi phien (tranh lap).

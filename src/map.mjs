@@ -600,6 +600,34 @@ export function buildToolCard({ workingDir, claudeToolNames, userRules } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// tool_choice. Gateway Postman KHONG co tham so nay, nen chi con hai duong:
+//   'none'          -> cat het native mappable (xu ly o server: coi nhu client khong khai tool)
+//   'any' / 'tool'  -> ep bang CHI DAN trong query (kenh duy nhat model chiu nghe - da do thuc te)
+// Tra { mode, name, hint }. hint='' nghia la khong can lam gi.
+// ---------------------------------------------------------------------------
+export function toolChoiceDirective(toolChoice, claudeToolNames) {
+  const t = toolChoice && typeof toolChoice === 'object' ? toolChoice : (typeof toolChoice === 'string' ? { type: toolChoice } : null);
+  const mode = t && t.type ? String(t.type).toLowerCase() : 'auto';
+  // 'none': cat tool o gateway la chua du - model bi cat tool se DIEN lai cu phap goi tool
+  // bang van ban (<function_calls>...) va rac do lot thang ra nguoi dung. Phai noi ro.
+  if (mode === 'none') return { mode: 'none', name: null, hint: 'YEU CAU CUA NGUOI DUNG: luot nay KHONG duoc goi bat ky cong cu nao. Tra loi truc tiep bang van ban; neu thieu du lieu thi noi ro la thieu, TUYET DOI khong viet ra cu phap goi cong cu.' };
+  if (mode !== 'any' && mode !== 'tool' && mode !== 'required') return { mode: 'auto', name: null, hint: '' };
+  // Ten client khai -> ten native Postman ma model that su nhin thay.
+  let native = null;
+  if (t.name) {
+    const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
+    for (const [cap, natives] of Object.entries(CLAUDE_TO_NATIVES)) {
+      const alias = [cap, ...(CAP_EQUIV[cap] || [])].map((x) => String(x).toLowerCase());
+      if (alias.includes(String(t.name).toLowerCase()) && hasCapability(set, cap)) { native = natives[0]; break; }
+    }
+  }
+  const hint = native
+    ? 'YEU CAU CUA NGUOI DUNG: luot nay BAT BUOC phai goi cong cu ' + native + ' (' + t.name + '), khong duoc tra loi bang van ban.'
+    : 'YEU CAU CUA NGUOI DUNG: luot nay BAT BUOC phai goi mot cong cu, khong duoc tra loi bang van ban.';
+  return { mode: mode === 'required' ? 'any' : mode, name: native, hint };
+}
+
+// ---------------------------------------------------------------------------
 // Model: ten Anthropic (claude-sonnet-4-..., claude-opus-..., claude-haiku-...) -> key Postman.
 // Khong map duoc => tra null (giu selectedModel mac dinh cua template).
 // ---------------------------------------------------------------------------

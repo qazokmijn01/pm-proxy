@@ -12,7 +12,7 @@ import assert from 'node:assert';
 import {
   pickArg, mapPostmanToolToClaude, excludedToolsFor, buildToolCard, mapModel, claudeToolSet,
   conformToolName, conformInputToSchema,
-  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL, nativesToKeep,
+  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL, nativesToKeep, toolChoiceDirective,
 } from './map.mjs';
 import { toAnthropicBody, toOpenAIResponse } from './openai.mjs';
 import { AnthropicSSE } from './sse.mjs';
@@ -494,6 +494,44 @@ ok('nhan dien nang luc theo ten phi chuan (read_file, cat, exec...)', () => {
   assert.ok(!nativesToKeep(claudeToolSet([{ name: 'khong_lien_quan' }])).has('readFile'));
   const ex = excludedToolsFor(claudeToolSet([{ name: 'read_file' }]), []);
   assert.ok(!ex.includes('readFile'), 'khong duoc cam readFile khi client CO kha nang doc file');
+});
+
+ok('tool_choice: none -> cat tool VA dan model dung viet cu phap goi tool', () => {
+  const d = toolChoiceDirective({ type: 'none' }, claudeToolSet([{ name: 'read_file' }]));
+  assert.equal(d.mode, 'none');
+  // Cat tool o gateway chua du: model bi cat tool se viet ra cu phap goi tool bang van ban.
+  assert.ok(/KHONG duoc goi/.test(d.hint), d.hint);
+});
+
+ok('tool_choice: required/any -> sinh chi dan ep goi tool', () => {
+  const d = toolChoiceDirective({ type: 'any' }, claudeToolSet([{ name: 'read_file' }]));
+  assert.equal(d.mode, 'any');
+  assert.ok(/BAT BUOC/.test(d.hint), d.hint);
+});
+
+ok('tool_choice: chi dinh ten -> doi sang ten NATIVE ma model that su nhin thay', () => {
+  const d = toolChoiceDirective({ type: 'tool', name: 'read_file' }, claudeToolSet([{ name: 'read_file' }]));
+  assert.equal(d.name, 'readFile', 'ten client (read_file) -> ten native Postman (readFile)');
+  assert.ok(d.hint.includes('readFile') && d.hint.includes('read_file'), d.hint);
+});
+
+ok('tool_choice: auto hoac khong khai -> khong lam gi', () => {
+  assert.equal(toolChoiceDirective(undefined, claudeToolSet([{ name: 'Read' }])).hint, '');
+  assert.equal(toolChoiceDirective({ type: 'auto' }, claudeToolSet([{ name: 'Read' }])).hint, '');
+});
+
+ok('tool_choice OpenAI -> dang Anthropic', () => {
+  const mk = (tc) => toAnthropicBody({ messages: [{ role: 'user', content: 'a' }], tool_choice: tc }).tool_choice;
+  assert.deepEqual(mk('none'), { type: 'none' });
+  assert.deepEqual(mk('required'), { type: 'any' });
+  assert.deepEqual(mk({ type: 'function', function: { name: 'f' } }), { type: 'tool', name: 'f' });
+  assert.equal(mk('auto'), undefined, 'auto la mac dinh -> khong can dat gi');
+});
+
+ok('anh: bao ro cho model thay vi bo im lang', () => {
+  const b = toAnthropicBody({ messages: [{ role: 'user', content: [{ type: 'text', text: 'anh gi day?' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AA' } }] }] });
+  assert.ok(b.messages[0].content.includes('anh gi day?'));
+  assert.ok(/khong xem duoc anh/i.test(b.messages[0].content), 'model phai biet minh dang thieu du lieu: ' + b.messages[0].content);
 });
 
 console.log('\n# rules.md: sinh lai khi nguon doi, khong de ban tu viet tay');
