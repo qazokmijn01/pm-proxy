@@ -32,8 +32,20 @@ export function pickArg(args, ...aliases) {
 
 // Boc chuoi cho shell (single-quote an toan cho POSIX; Claude Code Bash chay qua shell).
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
-// Shell cua may client: quyet dinh sinh cu phap POSIX hay PowerShell.
-const isPwsh = () => /pwsh|powershell/i.test(String(process.env.PM_SHELL || (process.platform === 'win32' ? 'powershell' : 'posix')));
+// Shell nao se CHAY lenh? Quyet dinh boi CLIENT, khong phai HDH cua may chay proxy:
+//   Bash cua Claude Code  -> Git Bash, ke ca tren Windows  -> cu phap POSIX (ls -la)
+//   exec/terminal cua openclaw -> PowerShell               -> Get-ChildItem
+// Doan sai thi lenh bao 'command not found' va model tuong minh khong co cong cu.
+// PM_SHELL van la loi ep cuoi cung neu can.
+const isPwsh = (set) => {
+  const env = process.env.PM_SHELL;
+  if (env) return /pwsh|powershell/i.test(env);
+  if (set && typeof set.has === 'function') {
+    if (set.has('bash')) return false;                        // Claude Code: git bash
+    if (set.has('powershell') || set.has('exec') || set.has('terminal') || set.has('shell')) return process.platform === 'win32';
+  }
+  return process.platform === 'win32';
+};
 // Duong dan tuong doi chi dung khi shell dang dung thu muc du an - khong dam bao.
 // Proxy BIET thu muc lam viec, nen doi sang tuyet doi truoc khi sinh lenh.
 const absPath = (p, workingDir) => {
@@ -97,7 +109,7 @@ function adaptToClient(out, set, opts = {}) {
     if (sh) {
       const nm = String(input.pattern || '').replace(/\*\*\//g, '').replace(/^\*+|\*+$/g, '');
       const base = absPath(String(input.path || '.'), opts.workingDir);
-      const cmd = isPwsh()
+      const cmd = isPwsh(set)
         ? (nm ? ('Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath ' + shq(base) + ' -Filter ' + shq('*' + nm + '*') + ' | Select-Object -ExpandProperty FullName')
               : ('Get-ChildItem -Force -LiteralPath ' + shq(base) + ' | Select-Object -ExpandProperty FullName'))
         : (nm ? ('find ' + shq(base) + ' -iname ' + shq('*' + nm + '*')) : ('ls -la ' + shq(base)));
@@ -153,7 +165,7 @@ const TRANSLATORS = {
     const dir = absPath(pickArg(a, 'relativePath', 'path', 'directory') || '.', opts.workingDir);
     // 'ls -la' la cu phap POSIX; tren PowerShell 'ls' la alias Get-ChildItem va bao loi
     // "A parameter cannot be found that matches parameter name 'la'" -> model lap lai vo han.
-    const cmd = isPwsh()
+    const cmd = isPwsh(opts.clientTools)
       ? `Get-ChildItem -Force -LiteralPath ${shq(dir)} | Select-Object Mode,Length,LastWriteTime,Name`
       : `ls -la -- ${shq(dir)}`;
     return { name: 'Bash', input: { command: cmd, description: `List ${dir}` } };
@@ -549,7 +561,7 @@ export function mapPostmanToolToClaude(nativeName, rawArgs, claudeToolNames, opt
   }
   const fn = TRANSLATORS[nativeName];
   if (fn) {
-    const out = adaptToClient(fn(rawArgs || {}, opts), set, opts);
+    const out = adaptToClient(fn(rawArgs || {}, { ...opts, clientTools: set }), set, opts);
     if (!out) return { kind: 'drop', reason: `Thieu tham so bat buoc cho ${nativeName}`, syntheticResult: `[proxy] Bo qua ${nativeName}: thieu tham so bat buoc.` };
     if (!set.has(out.name.toLowerCase())) {
       return { kind: 'drop', reason: `Client khong khai tool ${out.name}`, syntheticResult: `[proxy] Bo qua ${nativeName}: client Claude Code khong bat ${out.name}.` };

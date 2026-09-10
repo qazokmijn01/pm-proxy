@@ -42,6 +42,16 @@ ok('executeShellCommand -> Bash, ghep cd <projectPath>', () => {
   assert.equal(r.kind, 'client'); assert.equal(r.name, 'Bash');
   assert.match(r.input.command, /cd '\/proj'; ls/);
 });
+ok('shell chon theo CLIENT, khong theo HDH cua may chay proxy', () => {
+  // Claude Code Bash = Git Bash ke ca tren Windows -> Get-ChildItem se bao "command not found".
+  const cc = mapPostmanToolToClaude('listDirectory', { relativePath: 'src' }, claudeToolSet([{ name: 'Bash' }]), { workingDir: 'C:/du/an' });
+  assert.match(cc.input.command, /ls -la/, 'Claude Code phai nhan cu phap POSIX: ' + cc.input.command);
+  assert.ok(!/Get-ChildItem/.test(cc.input.command));
+  // openclaw exec = PowerShell -> 'ls -la' bao loi tham so 'la'.
+  const oc = mapPostmanToolToClaude('listDirectory', { relativePath: 'src' }, claudeToolSet([{ name: 'exec' }]), { workingDir: 'C:/du/an' });
+  if (process.platform === 'win32') assert.match(oc.input.command, /Get-ChildItem/, oc.input.command);
+});
+
 ok('listDirectory -> lenh dung theo SHELL cua may (PowerShell khong hieu "ls -la")', () => {
   const prev = process.env.PM_SHELL;
   try {
