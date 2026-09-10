@@ -8,6 +8,7 @@
  */
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
+import require0 from 'node:path';
 
 const PORT = process.argv[2] || '8799';
 const KIND = process.argv[3] || 'openclaw';
@@ -24,6 +25,10 @@ const TOOLS_OPENCLAW = [
 const TOOLS_CC = [
   { name: 'Bash', description: 'Run a shell command', input_schema: { type: 'object', properties: { command: { type: 'string' }, description: { type: 'string' } }, required: ['command'] } },
   { name: 'Read', description: 'Read a file', input_schema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] } },
+  { name: 'Write', description: 'Write a file', input_schema: { type: 'object', properties: { file_path: { type: 'string' }, content: { type: 'string' } }, required: ['file_path', 'content'] } },
+  { name: 'Edit', description: 'Edit a file by replacing text', input_schema: { type: 'object', properties: { file_path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' } }, required: ['file_path', 'old_string', 'new_string'] } },
+  { name: 'Glob', description: 'Find files by pattern', input_schema: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' } }, required: ['pattern'] } },
+  { name: 'Grep', description: 'Search file contents', input_schema: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' }, output_mode: { type: 'string' } }, required: ['pattern'] } },
   { name: 'Agent', description: 'Launch a new agent', input_schema: { type: 'object', properties: { description: { type: 'string' }, prompt: { type: 'string' }, subagent_type: { type: 'string' }, run_in_background: { type: 'boolean' } }, required: ['description', 'prompt'], additionalProperties: false } },
 ];
 const TOOLS = KIND === 'openclaw' ? TOOLS_OPENCLAW : TOOLS_CC;
@@ -40,6 +45,9 @@ function runTool(name, input) {
       const out = execSync(cmd, { cwd: input.cwd || process.cwd(), encoding: 'utf8', timeout: 60000, windowsHide: true, shell });
       return { ok: true, ms: Date.now() - t0, out: String(out).slice(0, 2000) };
     }
+    if (name === 'Write') { fs.mkdirSync(require0.dirname(input.file_path), { recursive: true }); fs.writeFileSync(input.file_path, input.content ?? ''); return { ok: true, ms: Date.now() - t0, out: 'da ghi ' + input.file_path }; }
+    if (name === 'Edit') { const cur = fs.readFileSync(input.file_path, 'utf8'); fs.writeFileSync(input.file_path, cur.replace(input.old_string, input.new_string)); return { ok: true, ms: Date.now() - t0, out: 'da sua ' + input.file_path }; }
+    if (name === 'Glob' || name === 'Grep') { return { ok: true, ms: Date.now() - t0, out: '(khong tim thay)' }; }
     if (name === 'read' || name === 'Read') {
       return { ok: true, ms: Date.now() - t0, out: fs.readFileSync(input.path || input.file_path, 'utf8').slice(0, 2000) };
     }

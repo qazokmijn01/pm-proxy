@@ -300,6 +300,16 @@ ok('card: co Task => co huong dan uy nhiem sub-agent (keu goi chay dong thoi)', 
   assert.ok(/KHONG dung cho viec vat/.test(card), 'co chan lam dung');
 });
 
+ok('card: noi ro cach XOA file (Postman khong co native xoa)', () => {
+  // Model bao "khong co cong cu xoa" roi ghi de file thanh rong - file van con tren dia.
+  const withShell = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Bash' }, { name: 'Write' }]) });
+  assert.ok(/XOA file/.test(withShell), withShell);
+  assert.ok(/executeShellCommand/.test(withShell));
+  // Khong co shell thi khong the xoa duoc -> dung hua hen gi ca.
+  const noShell = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Read' }]) });
+  assert.ok(!/XOA file/.test(noShell));
+});
+
 ok('card: co userRules => chen quy tac, ghi ro nguon la nguoi dung', () => {
   const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Read' }]), userRules: 'Luon tra loi bang TIENG VIET.' });
   assert.ok(card.includes('Luon tra loi bang TIENG VIET.'), 'giu nguyen van quy tac');

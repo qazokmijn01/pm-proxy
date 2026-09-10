@@ -689,6 +689,9 @@ export function buildToolCard({ workingDir, claudeToolNames, userRules, isSubage
       '- Luc do: noi ngan gon la da uy nhiem xong va DUNG LUOT tai day. TUYET DOI khong goi lai cung mot viec, khong tu lam thay, khong doan ma tac vu de tra cuu.',
     );
   }
+  // Postman KHONG co native xoa file (chi create/write/edit). Model khong tu suy ra duoc:
+  // no bao 'khong co cong cu xoa' roi lam RONG file thay vi xoa - da gap 2 lan tren may that.
+  if (hasCapability(set, 'bash')) lines.push('Khong co cong cu XOA file rieng. Muon xoa file/thu muc thi dung executeShellCommand (vi du: rm, del, Remove-Item) - TUYET DOI khong "xoa" bang cach ghi de file thanh rong.');
   lines.push('Neu thu muc lam viec co file CLAUDE.md, PHAI tuan theo no.');
   // Quy tac rieng cua nguoi dung: dat CUOI card (sat noi dung nguoi dung) va noi ro nguon
   // goc, de model coi day la chi dan hop le cua chu phien chu khong phai text lot vao tu
