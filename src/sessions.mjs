@@ -75,8 +75,14 @@ export function setSession(key, data) {
   return state.sessions[key];
 }
 
+// Mot so client sanitize tool_use_id truoc khi tra ve (openclaw bo het dau '_':
+// toolu_bdrk_01Abc -> toolubdrk01Abc). Neu tra cuu khop chinh xac thi TRUOT 100%, moi
+// tool_result bi coi la mo coi va phai gui len duoi dang USER_QUERY thay vi TOOL_RESPONSE.
+// Vi vay dung khoa CHUAN HOA (chi chu+so) va giu ID GOC trong info de tra ve gateway.
+export const normToolId = (s) => String(s == null ? '' : s).replace(/[^a-zA-Z0-9]/g, '');
+
 export function recordToolUse(toolUseId, info) {
-  state.tools[toolUseId] = { ...info, at: Date.now(), boot: BOOT_ID };
+  state.tools[normToolId(toolUseId)] = { ...info, toolCallId: toolUseId, at: Date.now(), boot: BOOT_ID };
   const keys = Object.keys(state.tools);
   if (keys.length > MAX_TOOLS) {
     keys.sort((a, b) => (state.tools[a].at || 0) - (state.tools[b].at || 0));
@@ -86,7 +92,7 @@ export function recordToolUse(toolUseId, info) {
 }
 
 export function getToolUse(toolUseId) {
-  const t = state.tools[toolUseId];
+  const t = state.tools[normToolId(toolUseId)];
   if (!t) return null;
   // Chi hop le khi tool duoc ghi trong DUNG lan chay nay. Entry thieu boot (do phien cu / file
   // cache tu ban proxy truoc) hoac khac BOOT_ID => LAN CHAY CU: gateway da bo pending -> coi nhu

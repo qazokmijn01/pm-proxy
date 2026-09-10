@@ -206,7 +206,9 @@ export function buildToolResponses(results, getToolUse) {
       sum = 'askUser answer: ' + summarize(answer);
     }
     g.toolResponses.push({
-      toolCallId: r.toolUseId,
+      // ID GOC ma gateway cap, khong phai id client tra ve - client co the da sanitize no
+      // (bo dau '_'), gui lai dang do se bi gateway bao TOOL_CALL_NOT_FOUND.
+      toolCallId: info.toolCallId || r.toolUseId,
       content,
       toolResponseSummary: sum,
       toolResponseStatus: r.isError ? 'FAILURE' : 'SUCCESS',

@@ -875,5 +875,35 @@ ok('CONVERSATION_NOT_FOUND -> phien KHONG con giu id da chet (chong lap vo han)'
 });
 
 
+console.log('\n# tool_use_id bi client sanitize (openclaw bo dau "_")');
+ok('client tra ve id da bo dau "_" => proxy VAN nhan ra', () => {
+  recordToolUse('toolu_bdrk_01DHLjNUr6e9Vmfeagoo5ijq', { conversationId: 'c1', groupId: 'g1', nativeName: 'read' });
+  const info = getToolUse('toolubdrk01DHLjNUr6e9Vmfeagoo5ijq');   // dung shape openclaw tra ve
+  assert.ok(info, 'khong nhan ra => moi ket qua tool bi day len duoi dang USER_QUERY');
+  assert.equal(info.groupId, 'g1');
+});
+
+ok('id nguyen ven van tra cuu binh thuong', () => {
+  recordToolUse('toolu_bdrk_02Xyz', { conversationId: 'c2', groupId: 'g2' });
+  assert.ok(getToolUse('toolu_bdrk_02Xyz'));
+});
+
+ok('gui len gateway phai la ID GOC, khong phai id client da cat', () => {
+  recordToolUse('toolu_bdrk_03AbCdEf', { conversationId: 'c3', groupId: 'g3' });
+  const { groups, unknown } = buildToolResponses(
+    [{ toolUseId: 'toolubdrk03AbCdEf', content: 'ket qua', isError: false }],   // id da bi sanitize
+    getToolUse,
+  );
+  assert.equal(unknown.length, 0, 'khong duoc coi la mo coi');
+  const tr = groups.g3.toolResponses[0];
+  assert.equal(tr.toolCallId, 'toolu_bdrk_03AbCdEf', 'gui id da cat len gateway se bi TOOL_CALL_NOT_FOUND');
+});
+
+ok('id khong ton tai van bao mo coi (khong nhan bua)', () => {
+  const { unknown } = buildToolResponses([{ toolUseId: 'khong_he_ton_tai_123', content: 'x' }], getToolUse);
+  assert.equal(unknown.length, 1);
+});
+
+
 console.log(`\n${fail ? '[X]' : '[OK]'} selftest: ${pass} pass, ${fail} fail\n`);
 process.exit(fail ? 1 : 0);
