@@ -19,7 +19,7 @@ import { AnthropicSSE } from './sse.mjs';
 import { analyzeRequest, buildToolResponses, extractAskUserAnswer, rebuildTranscript, priorMessages, isUtilityTurn } from './translate.mjs';
 import { runGateway, runGatewayResilient, thinkingFlag, prepBody, BufferEmitter } from './server.mjs';
 import { loadTemplate } from './core.mjs';
-import { recordToolUse, getToolUse } from './sessions.mjs';
+import { recordToolUse, getToolUse, getSession, setSession } from './sessions.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); console.log('  [v]', name); pass++; } catch (e) { console.log('  [x]', name, '->', e.message); fail++; } };
@@ -843,6 +843,37 @@ await okAsync('runGatewayResilient: khong con conversationId -> hoi thoai MOI ke
     assert.match(secondBody.input.query, /OUTPUT_XYZ/, 'co ket qua tool luot hien tai');
   } finally { globalThis.fetch = orig; }
 });
+
+await okAsync('CONVERSATION_NOT_FOUND -> mo hoi thoai MOI ngay (KHONG thu lai id da chet)', async () => {
+  const orig = globalThis.fetch;
+  let round = 0; const sent = [];
+  globalThis.fetch = async (_url, init) => {
+    round++;
+    const body = JSON.parse(init.body);
+    sent.push(body.input.conversationId);
+    if (round === 1) return sseRes([ev('failure', { errorType: 'CONVERSATION_NOT_FOUND', userMessage: "Looks like I couldn't find this chat." })]);
+    return sseRes([ev('conversation', { id: 'conv_moi' }), ev('textChunk', { textContent: 'ok' }), '[DONE]']);
+  };
+  try {
+    const { buildBody } = await import('./core.mjs');
+    setSession('kconv', { conversationId: 'conv_da_chet' });
+    const emitter = new BufferEmitter({ model: 'claude-x' });
+    const gw = buildBody('USER_QUERY', { query: 'cau hoi', conversationId: 'conv_da_chet' });
+    const turn = { kind: 'user_query', text: 'cau hoi' };
+    const recov = { turn, messages: [{ role: 'user', content: 'cau hoi' }], key: 'kconv', model: 'claude-x', opts: baseOpts, conversationId: 'conv_da_chet' };
+    await runGatewayResilient('faketoken', gw, emitter, { conversationId: 'conv_da_chet', key: 'kconv', model: 'claude-x', opts: baseOpts, round: 0 }, recov);
+    assert.equal(round, 2, 'chi retry 1 lan - khong thu lai id da chet');
+    assert.equal(sent[1], null, 'lan 2 phai la hoi thoai MOI (conversationId=null)');
+  } finally { globalThis.fetch = orig; }
+});
+
+ok('CONVERSATION_NOT_FOUND -> phien KHONG con giu id da chet (chong lap vo han)', () => {
+  const sess = getSession('kconv');
+  const cur = sess && sess.conversationId;
+  assert.notEqual(cur, 'conv_da_chet', 'con giu id chet thi luot sau lai gui len va lai loi');
+  assert.equal(cur, 'conv_moi', 'phai la hoi thoai moi vua mo');
+});
+
 
 console.log(`\n${fail ? '[X]' : '[OK]'} selftest: ${pass} pass, ${fail} fail\n`);
 process.exit(fail ? 1 : 0);

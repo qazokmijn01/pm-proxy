@@ -319,9 +319,14 @@ async function runGateway(token, body, emitter, ctx) {
   emitter.finish('end_turn');
 }
 
+// Hai loi gateway deu co nghia "ngu canh cu khong dung lai duoc nua", nhung khac nhau o
+// cho co giu conversation hay khong:
+//   TOOL_CALL_NOT_FOUND   - gateway bo tool-call, hoi thoai VAN CON  -> thu giu conversationId
+//   CONVERSATION_NOT_FOUND - ca hoi thoai da mat                     -> BAT BUOC mo cai moi
+const RECOVERABLE = new Set(['TOOL_CALL_NOT_FOUND', 'CONVERSATION_NOT_FOUND']);
+
 /**
- * Chay gateway VA tu phuc hoi khi tool-call bi mo coi (loi TOOL_CALL_NOT_FOUND) - thuong xay ra
- * sau khi proxy restart: khong the tra TOOL_RESPONSE cho tool-call ma gateway da bo. Ta chuyen sang
+ * Chay gateway VA tu phuc hoi khi ngu canh tren gateway khong con dung duoc. Ta chuyen sang
  * USER_QUERY de hoi thoai CHAY TIEP, uu tien GIU conversationId (con ngu canh tren gateway); neu van
  * hong thi mo hoi thoai MOI kem transcript dung lai tu lich su client gui. Chi phuc hoi khi emitter
  * CHUA phat gi (loi failure den truoc content) de khong lam hong stream dang do.
@@ -331,19 +336,27 @@ async function runGatewayResilient(token, gwBody, emitter, ctx, recov) {
     await runGateway(token, gwBody, emitter, ctx);
     return;
   } catch (e) {
-    if (e.errorType !== 'TOOL_CALL_NOT_FOUND' || emitter.started || !recov) throw e;
-    const { turn, messages, key, model, opts, conversationId } = recov;
+    if (!RECOVERABLE.has(e.errorType) || emitter.started || !recov) throw e;
+    const { turn, messages, key, model, opts } = recov;
+    // Hoi thoai da mat han -> QUEN conversationId ngay, neu khong luot sau lai gui len
+    // dung cai id chet do va lap vo han (da quan sat tren may that).
+    const convGone = e.errorType === 'CONVERSATION_NOT_FOUND';
+    if (convGone) { setSession(key, { conversationId: null }); cap({ dir: 'conversation_not_found', key }); }
+    const conversationId = convGone ? null : recov.conversationId;
     const base = (turn.kind === 'tool_result')
       ? 'Ket qua tool:\n' + turn.results.map((r) => r.content).join('\n---\n')
       : (turn.text || '');
-    cap({ dir: 'tool_call_not_found_recover', keepConv: !!conversationId });
-    dbg('TOOL_CALL_NOT_FOUND -> phuc hoi bang USER_QUERY (giu conversationId=' + !!conversationId + ')');
+    cap({ dir: 'gateway_ctx_recover', errorType: e.errorType, keepConv: !!conversationId });
+    dbg(e.errorType + ' -> phuc hoi bang USER_QUERY (giu conversationId=' + !!conversationId + ')');
     // Buoc 1: USER_QUERY tren CUNG conversation (giu ngu canh tren gateway).
     if (conversationId) {
       try {
         await runGateway(token, buildBody('USER_QUERY', { query: base.slice(0, QUERY_CAP), conversationId }), emitter, { conversationId, key, model, opts, round: 0 });
         return;
-      } catch (e2) { if (e2.errorType !== 'TOOL_CALL_NOT_FOUND' || emitter.started) throw e2; }
+      } catch (e2) {
+        if (!RECOVERABLE.has(e2.errorType) || emitter.started) throw e2;
+        if (e2.errorType === 'CONVERSATION_NOT_FOUND') setSession(key, { conversationId: null });
+      }
     }
     // Buoc 2: hoi thoai MOI + dung lai ngu canh tu lich su (guaranteed: conversation moi luon nhan USER_QUERY).
     const prior = CTX_REBUILD ? priorMessages(messages) : [];
