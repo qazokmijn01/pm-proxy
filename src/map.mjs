@@ -647,7 +647,8 @@ export function buildToolCard({ workingDir, claudeToolNames, userRules } = {}) {
       'UY NHIEM SUB-AGENT - cong cu ' + SUBAGENT_TOOL + ' (tham so: description ngan 3-5 tu, prompt tu chua):',
       '- BAT BUOC dung khi lan luot nay co TU 2 VIEC DOC LAP tro len (vi du: ra soat nhieu module khac nhau, tim kiem tren nhieu thu muc, kiem tra nhieu gia thuyet). Phat NHIEU tool call ' + SUBAGENT_TOOL + ' trong CUNG mot luot de chung chay DONG THOI, dung lam tuan tu.',
       '- NEN dung khi mot viec lon va tu chua (ra soat ca thu muc, doc nhieu file de tong hop, mot luot review day du).',
-      '- KHONG dung cho viec vat: doc 1 file, chay 1 lenh, sua 1 cho da biet ro - tu lam nhanh hon.',
+      '- KHONG dung cho viec vat - TU LAM nhanh hon va re hon: doc vai file, liet ke thu muc, tim mot file, chay mot lenh, sua mot cho da biet ro.',
+      '- Uy nhiem xong ma bao cao chua dung y: TU KIEM TRA lai bang cong cu san co, dung uy nhiem lai cung mot viec (moi lan uy nhiem la mot phien rieng, rat ton).',
       '- Sub-agent KHONG thay hoi thoai nay: prompt phai tu chua (duong dan tuyet doi, muc tieu, dinh dang ket qua mong muon).',
       '- Nguoi dung yeu cau "uy nhiem" / "sub-agent" / "chay song song" => PHAI goi cong cu nay, khong tu lam.',
     );
