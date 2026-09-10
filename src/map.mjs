@@ -115,7 +115,19 @@ function adaptToClient(out, set, opts = {}) {
     // openclaw dung khoa khac han: task = noi dung cong viec, taskName = nhan ngan.
     // Gui thang {description, prompt} vao se roi vao nhanh mac dinh va khong chay gi.
     const inp = { task: String(input.prompt || input.description || '') };
-    if (input.description) inp.taskName = String(input.description).slice(0, 60);
+    // taskName cua openclaw phai la SLUG: 1-64 ky tu khop [a-z][a-z0-9_-]*.
+    // description la cau tieng nguoi ("Fix autopilot.md hidden launch") -> bi tu choi:
+    //   {"status":"error","error":"Invalid taskName ... Use 1-64 chars matching [a-z][a-z0-9_-]*"}
+    if (input.description) {
+      const slug = String(input.description)
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')   // bo dau tieng Viet
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^[^a-z]+/, '')                            // phai bat dau bang chu cai
+        .replace(/-+$/, '')
+        .slice(0, 64);
+      if (slug) inp.taskName = slug;
+    }
     // Khong dat cwd thi sub-agent chay o thu muc mac dinh cua client, khong phai du an
     // dang lam - no khong bao loi, chi lang le lam sai cho.
     if (opts.workingDir) inp.cwd = String(opts.workingDir);

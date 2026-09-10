@@ -186,7 +186,7 @@ async function readGatewayStream(res, emitter, ctx) {
         break;
       case 'textChunk': {
         const t = (d && (d.textContent || d.text || d.delta || d.content)) || '';
-        if (t) emitter.textDelta(t);
+        if (t) { emitter.textDelta(t); ctx._text = (ctx._text || '') + t; }
         break;
       }
       case 'planningChunk': { const t = d && (d.textContent || d.text); if (t) emitter.textDelta(t); break; }
@@ -233,6 +233,9 @@ async function readGatewayStream(res, emitter, ctx) {
     }
     if (done) break;
   }
+  // Ghi lai VAN BAN model tra ve. Khi model khong goi tool ma chi tra loi (vd sub-agent
+  // noi "toi khong co cong cu"), day la manh moi duy nhat de biet vi sao.
+  if (ctx._text) cap({ dir: 'out_text', round: ctx.round, toolCount: order.length, text: String(ctx._text).slice(0, 900) });
   return { tools: order.map((id) => acc[id]), sawLoopApproval };
 }
 
