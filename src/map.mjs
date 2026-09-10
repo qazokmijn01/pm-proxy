@@ -53,7 +53,7 @@ const CAP_EQUIV = {
   webfetch: ['WebFetch', 'web_fetch', 'fetch_url', 'file_fetch'],
   websearch: ['WebSearch', 'web_search'],
   askuserquestion: ['AskUserQuestion', 'ask_user', 'askuser'],
-  task: ['Task', 'Agent', 'task', 'agent'],
+  task: ['Task', 'Agent', 'task', 'agent', 'subagents', 'sessions_spawn', 'subagent', 'spawn_agent'],
 };
 function adaptToClient(out, set) {
   if (!out || !out.name) return out;
@@ -286,7 +286,12 @@ const TRANSLATORS = {
     if (!prompt) return null;
     const description = String(pickArg(a, 'description', 'title', 'name', 'summary') || prompt).slice(0, 60);
     const subagent_type = String(pickArg(a, 'subagent_type', 'agentType', 'agent', 'type', 'role') || 'general-purpose');
-    return { name: 'Task', input: { description, prompt: String(prompt), subagent_type } };
+    // run_in_background=false la BAT BUOC: mac dinh cua client la chay NEN, tra ve ngay
+    // "da khoi dong" thay vi ket qua. Gateway khong co duong nhan thong bao nen - ket qua
+    // PHAI nam trong tool_result cua chinh luot nay, neu khong model tuong subagent hong
+    // va goi lai lien tuc (da quan sat: 18 lan trong mot phien).
+    // Client nao khong khai khoa nay thi conformInputToSchema tu cat bo.
+    return { name: 'Task', input: { description, prompt: String(prompt), subagent_type, run_in_background: false } };
   },
 };
 
@@ -358,6 +363,8 @@ export const CLAUDE_TO_NATIVES = {
   askuserquestion: ['askUser'],
   task: ['SubAgent'],
   agent: ['SubAgent'],
+  subagents: ['SubAgent'],        // openclaw
+  sessions_spawn: ['SubAgent'],   // openclaw
 };
 
 // Moi native Postman ta biet cach dich (dung de tinh excludedTools).
@@ -397,7 +404,7 @@ export const SUBAGENT_TOOL = SUBAGENT_SERVER + '__local__delegate_subagent';
 
 export function subagentThirdParty(claudeToolNames) {
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
-  if (!set.has('task') && !set.has('agent')) return null;
+  if (!hasCapability(set, 'task')) return null;   // dung chung bang nang luc (DRY)
   return {
     [SUBAGENT_SERVER]: {
       serverConfig: { command: 'pm-ai-proxy-subagent', args: [] },
@@ -423,7 +430,12 @@ export function subagentThirdParty(claudeToolNames) {
 export function hasCapability(set, cap) {
   if (set.has(cap)) return true;
   const alias = CAP_EQUIV[cap];
-  return !!(alias && alias.some((n) => set.has(String(n).toLowerCase())));
+  if (alias && alias.some((n) => set.has(String(n).toLowerCase()))) return true;
+  // Grep/Glob: client khong co tool tim kiem rieng VAN tim duoc neu co shell -
+  // adaptToClient ha xuong find/grep (hoac Get-ChildItem tren Windows). Neu khong xet
+  // o day thi searchFiles bi cam ngay tu dau va duong ha xuong shell khong bao gio chay.
+  if ((cap === 'grep' || cap === 'glob') && CAP_EQUIV.bash.some((n) => set.has(String(n).toLowerCase()))) return true;
+  return false;
 }
 
 export function nativesToKeep(claudeToolNames) {

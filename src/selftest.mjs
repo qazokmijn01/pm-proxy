@@ -12,7 +12,7 @@ import assert from 'node:assert';
 import {
   pickArg, mapPostmanToolToClaude, excludedToolsFor, buildToolCard, mapModel, claudeToolSet,
   conformToolName, conformInputToSchema,
-  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL, nativesToKeep, toolChoiceDirective,
+  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL, nativesToKeep, toolChoiceDirective, hasCapability,
 } from './map.mjs';
 import { toAnthropicBody, toOpenAIResponse } from './openai.mjs';
 import { AnthropicSSE } from './sse.mjs';
@@ -426,6 +426,43 @@ ok('extractAskUserAnswer: response > answers > raw', () => {
   assert.equal(extractAskUserAnswer(JSON.stringify({ response: 'freetext' })), 'freetext');
   assert.equal(extractAskUserAnswer(JSON.stringify({ answers: { q: 'A' } })), 'A');
   assert.equal(extractAskUserAnswer('plain'), 'plain');
+});
+
+ok('subagent: run_in_background=false - ket qua phai ve trong tool_result cua chinh luot nay', () => {
+  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'Chay demo', prompt: 'node demo.mjs' }, claudeToolSet([{ name: 'Task' }]));
+  assert.equal(r.input.run_in_background, false, 'mac dinh client la chay NEN -> tra ve "da khoi dong" thay vi ket qua');
+});
+
+ok('subagent: client khong khai run_in_background => tu cat bo (schema strict)', () => {
+  const defs = [{ name: 'Task', input_schema: { type: 'object', properties: { description: {}, prompt: {}, subagent_type: {} }, additionalProperties: false } }];
+  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, claudeToolSet(defs));
+  const input = conformInputToSchema(conformToolName(r.name, defs), r.input, defs);
+  assert.equal('run_in_background' in input, false, 'khoa la phai bi cat khi additionalProperties:false');
+  assert.equal(input.prompt, 'b');
+});
+
+ok('subagent: nhan dien ten cua client khac (openclaw: subagents / sessions_spawn)', () => {
+  const oc = claudeToolSet([{ name: 'exec' }, { name: 'read' }, { name: 'subagents' }]);
+  assert.ok(subagentThirdParty(oc), 'openclaw co subagents => phai duoc cap tool ao');
+  const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, oc);
+  assert.equal(r.kind, 'client');
+  assert.equal(r.name, 'subagents', 'doi sang dung ten client khai');
+});
+
+ok('tim kiem: client chi co shell van giu searchFiles (ha xuong shell)', () => {
+  const oc = claudeToolSet([{ name: 'exec' }, { name: 'read' }]);
+  assert.ok(hasCapability(oc, 'grep'), 'co shell => coi nhu tim kiem duoc');
+  assert.ok(nativesToKeep(oc).has('searchFiles'), 'khong duoc cam searchFiles');
+  const r = mapPostmanToolToClaude('searchFiles', { queryString: 'TODO', path: '/du/an' }, oc);
+  assert.equal(r.kind, 'client');
+  assert.equal(r.name, 'exec', 'khong co Grep native => chay bang shell');
+  assert.ok(/TODO/.test(r.input.command), r.input.command);
+});
+
+ok('tim kiem: client KHONG co shell lan Grep => moi bi cam', () => {
+  const only = claudeToolSet([{ name: 'read' }]);
+  assert.ok(!hasCapability(only, 'grep'));
+  assert.ok(excludedToolsFor(only, []).includes('searchFiles'));
 });
 
 console.log('\n# Tuong thich OpenAI (/v1/chat/completions)');
