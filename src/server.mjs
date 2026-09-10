@@ -568,6 +568,8 @@ async function handleMessages(req, res, body) {
       .map((r) => ({ r, info: getToolUse(r.toolUseId) }))
       .filter((x) => x.info && x.info.postmanNative === 'askUser');
     cap({ dir: 'tool_result_in', results: turn.results.map((r) => ({ id: r.toolUseId, known: !!getToolUse(r.toolUseId), askUser: !!(getToolUse(r.toolUseId) || {}).postmanNative && (getToolUse(r.toolUseId) || {}).postmanNative === 'askUser' })), unknown });
+    // Ghi NOI DUNG ket qua tool: khong co no thi moi lan chan doan phai dung lai gateway gia.
+    cap({ dir: 'tool_result_body', results: turn.results.map((r) => ({ id: r.toolUseId, native: (getToolUse(r.toolUseId) || {}).postmanNative || null, isError: !!r.isError, content: String(r.content == null ? '' : r.content).slice(0, 1200) })) });
     if (askUserAnswers.length) {
       // Tap chieu tra loi ve askUser: ghi DUNG noi dung Sep chon de doi chieu format gateway can.
       cap({ dir: 'askuser_answer', answers: askUserAnswers.map((x) => ({ toolUseId: x.r.toolUseId, known: !!x.info, isError: x.r.isError, content: String(x.r.content).slice(0, 600) })) });

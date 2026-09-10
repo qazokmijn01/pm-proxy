@@ -960,10 +960,20 @@ ok('id khong ton tai van bao mo coi (khong nhan bua)', () => {
 
 
 console.log('\n# Sub-agent bat dong bo: phai co duong CHO ket qua');
-ok('client bat dong bo (co agents_wait) => khai CA hai tool ao', () => {
+ok('client bat dong bo => KHONG khai tool cho (agents_wait luon not_found)', () => {
+  // Da do tren may that: agents_wait khong nhan ma cua sessions_spawn. Model thu UUID roi
+  // sessionKey, deu not_found ngay, roi loay hoay doan ma. Khai tool do la lam hai.
   const oc = claudeToolSet([{ name: 'exec' }, { name: 'sessions_spawn' }, { name: 'agents_wait' }]);
   const names = subagentThirdParty(oc)[SUBAGENT_SERVER].tools.map((t) => t.name);
-  assert.deepEqual(names, [SUBAGENT_TOOL, SUBAGENT_WAIT_TOOL]);
+  assert.deepEqual(names, [SUBAGENT_TOOL]);
+});
+
+ok('card: day model DUNG LUOT cho bao cao tu den, khong doan ma tac vu', () => {
+  const oc = claudeToolSet([{ name: 'exec' }, { name: 'sessions_spawn' }, { name: 'agents_wait' }]);
+  const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: oc });
+  assert.ok(/TU DEN sau vai chuc giay/.test(card), card.slice(-400));
+  assert.ok(/DUNG LUOT/.test(card));
+  assert.ok(!card.includes(SUBAGENT_WAIT_TOOL), 'khong duoc nhac toi tool cho da bo');
 });
 
 ok('client dong bo (khong co tool cho) => chi khai tool uy nhiem', () => {
@@ -972,29 +982,9 @@ ok('client dong bo (khong co tool cho) => chi khai tool uy nhiem', () => {
   assert.deepEqual(names, [SUBAGENT_TOOL], 'khong duoc khai tool cho ma client khong co');
 });
 
-ok('tool ao cho -> agents_wait cua client, ids luon la mang', () => {
-  const oc = claudeToolSet([{ name: 'sessions_spawn' }, { name: 'agents_wait' }]);
-  const r = mapPostmanToolToClaude(SUBAGENT_WAIT_TOOL, { taskId: 'task-abc123' }, oc);
-  assert.equal(r.kind, 'client');
-  assert.equal(r.name, 'agents_wait');
-  assert.deepEqual(r.input.ids, ['task-abc123'], 'mot ma le van phai boc thanh mang');
-  const r2 = mapPostmanToolToClaude(SUBAGENT_WAIT_TOOL, { ids: ['a', 'b'], timeoutSeconds: 60 }, oc);
-  assert.deepEqual(r2.input.ids, ['a', 'b']);
-  assert.equal(r2.input.timeoutSeconds, 60);
-});
-
-ok('tool ao cho: thieu ma tac vu => drop, khong goi bua', () => {
-  const oc = claudeToolSet([{ name: 'sessions_spawn' }, { name: 'agents_wait' }]);
-  assert.equal(mapPostmanToolToClaude(SUBAGENT_WAIT_TOOL, {}, oc).kind, 'drop');
-});
-
-ok('card: day model CHO thay vi ket luan la hong (loi that: goi lai 3 lan roi bo cuoc)', () => {
-  const oc = claudeToolSet([{ name: 'exec' }, { name: 'sessions_spawn' }, { name: 'agents_wait' }]);
-  const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: oc });
-  assert.ok(card.includes(SUBAGENT_WAIT_TOOL), 'thieu huong dan => model tuong cong cu hong');
-  assert.ok(/MA TAC VU/.test(card));
+ok('client dong bo (Claude Code) => card khong nhac gi ve cho event', () => {
   const cc = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Bash' }, { name: 'Agent' }]) });
-  assert.ok(!cc.includes(SUBAGENT_WAIT_TOOL), 'client dong bo thi khong can nhac gi ve cho');
+  assert.ok(!/TU DEN sau vai chuc giay/.test(cc), 'Agent chay dong bo, ket qua ve ngay');
 });
 
 

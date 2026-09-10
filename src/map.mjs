@@ -464,24 +464,12 @@ export function subagentThirdParty(claudeToolNames) {
       }],
     },
   };
-  // Client bat dong bo: spawn tra ve ma tac vu, phai CHO moi co ket qua. Khong khai tool
-  // cho thi model nhan duoc moi "da khoi dong", tuong cong cu hong roi tu lam lay.
-  if (hasCapability(set, 'taskwait')) {
-    tp[SUBAGENT_SERVER].tools.push({
-      name: SUBAGENT_WAIT_TOOL,
-      description: 'Wait for previously delegated sub-agent tasks to finish and return their reports. Call this right after delegating when the delegation returned a task id instead of a result.',
-      parameters: {
-        type: 'object',
-        properties: {
-          ids: { type: 'array', items: { type: 'string' }, description: 'Task ids returned by the delegation tool' },
-          timeoutSeconds: { type: 'number', description: 'How long to wait before giving up' },
-        },
-        required: ['ids'],
-        additionalProperties: false,
-        $schema: 'http://json-schema.org/draft-07/schema#',
-      },
-    });
-  }
+  // KHONG khai tool "cho": da do tren may that, agents_wait khong nhan ma do
+  // sessions_spawn sinh ra - model thu du dang (UUID, sessionKey) deu nhan not_found
+  // ngay roi loay hoay doan ma. openclaw tra ket qua qua EVENT hoan tat (tu den sau
+  // vai chuc giay), khong poll duoc. Duong dung la ket thuc luot va cho: buildToolCard
+  // day model dieu do. Giu lai translator await_subagent de tuong thich nguoc voi cac
+  // hoi thoai cu tren gateway con nho ten tool nay.
   return tp;
 }
 
@@ -662,7 +650,8 @@ export function buildToolCard({ workingDir, claudeToolNames, userRules } = {}) {
       '- Nguoi dung yeu cau "uy nhiem" / "sub-agent" / "chay song song" => PHAI goi cong cu nay, khong tu lam.',
     );
     if (hasCapability(set, 'taskwait')) lines.push(
-      '- Neu ket qua tra ve chi la MA TAC VU (taskId / sessionKey / "da khoi dong") chu chua co bao cao: KHONG duoc ket luan la hong va KHONG duoc goi lai. PHAI goi ' + SUBAGENT_WAIT_TOOL + ' voi cac ma do de lay ket qua that.',
+      '- Neu ket qua tra ve chi la MA TAC VU (taskId / sessionKey / "da khoi dong") chu chua co bao cao: day la BINH THUONG. Sub-agent chay nen va bao cao se TU DEN sau vai chuc giay.',
+      '- Luc do: noi ngan gon la da uy nhiem xong va DUNG LUOT tai day. TUYET DOI khong goi lai cung mot viec, khong tu lam thay, khong doan ma tac vu de tra cuu.',
     );
   }
   lines.push('Neu thu muc lam viec co file CLAUDE.md, PHAI tuan theo no.');
