@@ -441,12 +441,22 @@ ok('subagent: client khong khai run_in_background => tu cat bo (schema strict)',
   assert.equal(input.prompt, 'b');
 });
 
-ok('subagent: nhan dien ten cua client khac (openclaw: subagents / sessions_spawn)', () => {
+ok('subagent: KHONG khai tool ao cho tool uy nhiem chua biet schema', () => {
+  // openclaw co 'subagents' nhung do la tool DA HANH DONG (mac dinh action='list'):
+  // gui {description, prompt} vao thi no tra ve danh sach rong chu khong chay task.
+  // Tha khong co tinh nang con hon co ma hong - model van tu lam duoc bang exec.
   const oc = claudeToolSet([{ name: 'exec' }, { name: 'read' }, { name: 'subagents' }]);
-  assert.ok(subagentThirdParty(oc), 'openclaw co subagents => phai duoc cap tool ao');
+  assert.equal(subagentThirdParty(oc), null, 'chua chup duoc schema that => khong khai');
   const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, oc);
-  assert.equal(r.kind, 'client');
-  assert.equal(r.name, 'subagents', 'doi sang dung ten client khai');
+  assert.equal(r.kind, 'drop', 'co lot qua thi cung phai drop, khong goi bua');
+});
+
+ok('subagent: van khai binh thuong cho client co Task/Agent (schema da biet)', () => {
+  for (const n of ['Task', 'Agent']) {
+    const set = claudeToolSet([{ name: 'exec' }, { name: n }]);
+    assert.ok(subagentThirdParty(set), n + ' => phai duoc cap tool ao');
+    assert.equal(mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, set).name, n);
+  }
 });
 
 ok('tim kiem: client chi co shell van giu searchFiles (ha xuong shell)', () => {

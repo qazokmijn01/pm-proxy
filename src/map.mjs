@@ -53,7 +53,12 @@ const CAP_EQUIV = {
   webfetch: ['WebFetch', 'web_fetch', 'fetch_url', 'file_fetch'],
   websearch: ['WebSearch', 'web_search'],
   askuserquestion: ['AskUserQuestion', 'ask_user', 'askuser'],
-  task: ['Task', 'Agent', 'task', 'agent', 'subagents', 'sessions_spawn', 'subagent', 'spawn_agent'],
+  // CHI liet ke tool ma ta BIET CHAC schema {description, prompt, subagent_type}.
+  // openclaw co 'subagents'/'sessions_spawn' nhung do la tool DA HANH DONG (mac dinh
+  // action='list'): gui thang input cua ta vao thi no tra ve danh sach rong chu khong
+  // chay task. Chua chup duoc schema that -> khong khai tool ao cho client do, de model
+  // tu lam bang exec/read/edit (no von co san). Xem cap 'toolset' trong capture.
+  task: ['Task', 'Agent', 'task', 'agent'],
 };
 function adaptToClient(out, set) {
   if (!out || !out.name) return out;
@@ -363,8 +368,6 @@ export const CLAUDE_TO_NATIVES = {
   askuserquestion: ['askUser'],
   task: ['SubAgent'],
   agent: ['SubAgent'],
-  subagents: ['SubAgent'],        // openclaw
-  sessions_spawn: ['SubAgent'],   // openclaw
 };
 
 // Moi native Postman ta biet cach dich (dung de tinh excludedTools).
