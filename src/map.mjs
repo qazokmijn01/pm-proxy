@@ -34,6 +34,14 @@ export function pickArg(args, ...aliases) {
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 // Shell cua may client: quyet dinh sinh cu phap POSIX hay PowerShell.
 const isPwsh = () => /pwsh|powershell/i.test(String(process.env.PM_SHELL || (process.platform === 'win32' ? 'powershell' : 'posix')));
+// Duong dan tuong doi chi dung khi shell dang dung thu muc du an - khong dam bao.
+// Proxy BIET thu muc lam viec, nen doi sang tuyet doi truoc khi sinh lenh.
+const absPath = (p, workingDir) => {
+  const v = String(p == null ? '' : p).trim();
+  if (!workingDir || !v || v === '.') return v || String(workingDir || '.');
+  if (/^([a-zA-Z]:[\\/]|[\\/]|~)/.test(v)) return v;   // da tuyet doi (C:\ , C:/ , / , ~)
+  return String(workingDir).replace(/[\\/]+$/, '') + '/' + v.replace(/^[.][\\/]/, '');
+};
 
 // ---------------------------------------------------------------------------
 // Bang map: Postman native  ->  Claude Code. (docs/tool-mapping.md #5)
@@ -88,7 +96,7 @@ function adaptToClient(out, set, opts = {}) {
     const sh = anyShell();
     if (sh) {
       const nm = String(input.pattern || '').replace(/\*\*\//g, '').replace(/^\*+|\*+$/g, '');
-      const base = String(input.path || '.');
+      const base = absPath(String(input.path || '.'), opts.workingDir);
       const cmd = isPwsh()
         ? (nm ? ('Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath ' + shq(base) + ' -Filter ' + shq('*' + nm + '*') + ' | Select-Object -ExpandProperty FullName')
               : ('Get-ChildItem -Force -LiteralPath ' + shq(base) + ' | Select-Object -ExpandProperty FullName'))
@@ -100,7 +108,7 @@ function adaptToClient(out, set, opts = {}) {
   if (cap === 'grep') {
     if (target) return { name: target, input };
     const sh = anyShell();
-    if (sh) { let cmd = 'grep -rniE ' + shq(String(input.pattern || '')) + ' ' + shq(String(input.path || '.')); if (input.glob) cmd += ' --include=' + shq(String(input.glob)); return { name: sh, input: { command: cmd } }; }
+    if (sh) { let cmd = 'grep -rniE ' + shq(String(input.pattern || '')) + ' ' + shq(absPath(String(input.path || '.'), opts.workingDir)); if (input.glob) cmd += ' --include=' + shq(String(input.glob)); return { name: sh, input: { command: cmd } }; }
     return out;
   }
   if (cap === 'task' && target && String(target).toLowerCase() === 'sessions_spawn') {
@@ -129,8 +137,8 @@ const TRANSLATORS = {
     if (description) input.description = String(description);
     return { name: 'Bash', input };
   },
-  listDirectory(a) {
-    const dir = pickArg(a, 'relativePath', 'path', 'directory') || '.';
+  listDirectory(a, opts = {}) {
+    const dir = absPath(pickArg(a, 'relativePath', 'path', 'directory') || '.', opts.workingDir);
     // 'ls -la' la cu phap POSIX; tren PowerShell 'ls' la alias Get-ChildItem va bao loi
     // "A parameter cannot be found that matches parameter name 'la'" -> model lap lai vo han.
     const cmd = isPwsh()
@@ -138,13 +146,14 @@ const TRANSLATORS = {
       : `ls -la -- ${shq(dir)}`;
     return { name: 'Bash', input: { command: cmd, description: `List ${dir}` } };
   },
-  searchInFiles(a) { return TRANSLATORS.searchFiles(a); },
-  searchFiles(a) {
+  searchInFiles(a, opts = {}) { return TRANSLATORS.searchFiles(a, opts); },
+  searchFiles(a, opts = {}) {
     // Dung tool NATIVE cua Claude Code (Grep/Glob) thay vi `Bash rg`: Grep boc ripgrep bundled
     // san trong Claude Code, khong phu thuoc `rg` tren PATH va khong di qua hook shell (rtk).
     const pattern = pickArg(a, 'queryString', 'query', 'pattern', 'regex')
       || (Array.isArray(pickArg(a, 'queryPatterns')) ? pickArg(a, 'queryPatterns')[0] : undefined);
-    const path = pickArg(a, 'path', 'relativePath', 'directory');
+    const rawPath = pickArg(a, 'path', 'relativePath', 'directory');
+    const path = rawPath ? absPath(rawPath, opts.workingDir) : rawPath;
     const glob = Array.isArray(pickArg(a, 'fileNamePatterns')) ? pickArg(a, 'fileNamePatterns')[0] : pickArg(a, 'glob');
     if (pattern) {
       const input = { pattern: String(pattern), output_mode: 'content' };
@@ -530,7 +539,7 @@ export function mapPostmanToolToClaude(nativeName, rawArgs, claudeToolNames, opt
   }
   const fn = TRANSLATORS[nativeName];
   if (fn) {
-    const out = adaptToClient(fn(rawArgs || {}), set, opts);
+    const out = adaptToClient(fn(rawArgs || {}, opts), set, opts);
     if (!out) return { kind: 'drop', reason: `Thieu tham so bat buoc cho ${nativeName}`, syntheticResult: `[proxy] Bo qua ${nativeName}: thieu tham so bat buoc.` };
     if (!set.has(out.name.toLowerCase())) {
       return { kind: 'drop', reason: `Client khong khai tool ${out.name}`, syntheticResult: `[proxy] Bo qua ${nativeName}: client Claude Code khong bat ${out.name}.` };

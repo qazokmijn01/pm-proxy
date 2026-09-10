@@ -998,5 +998,37 @@ ok('card: day model CHO thay vi ket luan la hong (loi that: goi lai 3 lan roi bo
 });
 
 
+console.log('\n# Duong dan tuong doi -> tuyet doi theo thu muc lam viec');
+{
+  const OC = claudeToolSet([{ name: 'exec' }, { name: 'read' }]);
+  const WD = 'C:/du/an';
+
+  ok('listDirectory: duong dan tuong doi duoc noi vao thu muc du an', () => {
+    // Sub-agent chay o thu muc khac -> lenh voi duong dan tuong doi that bai va no
+    // ket luan "khong truy cap duoc file".
+    const r = mapPostmanToolToClaude('listDirectory', { relativePath: 'tools' }, OC, { workingDir: WD });
+    assert.ok(r.input.command.includes('C:/du/an/tools'), r.input.command);
+  });
+
+  ok('searchFiles: duong dan tuong doi cung duoc noi', () => {
+    const r = mapPostmanToolToClaude('searchFiles', { queryString: 'TODO', path: 'src' }, OC, { workingDir: WD });
+    assert.ok(JSON.stringify(r.input).includes('C:/du/an/src'), JSON.stringify(r.input));
+  });
+
+  ok('duong dan DA tuyet doi thi giu nguyen', () => {
+    for (const p of ['D:/khac', '/tmp/x', 'C:\\\\Windows']) {
+      const r = mapPostmanToolToClaude('listDirectory', { relativePath: p }, OC, { workingDir: WD });
+      assert.ok(!r.input.command.includes('C:/du/an'), p + ' -> ' + r.input.command);
+    }
+  });
+
+  ok('khong biet thu muc lam viec => KHONG bia duong dan', () => {
+    const r = mapPostmanToolToClaude('listDirectory', { relativePath: 'tools' }, OC);
+    assert.ok(r.input.command.includes("'tools'"), r.input.command);
+    assert.ok(!/du\/an/.test(r.input.command));
+  });
+}
+
+
 console.log(`\n${fail ? '[X]' : '[OK]'} selftest: ${pass} pass, ${fail} fail\n`);
 process.exit(fail ? 1 : 0);
