@@ -7,6 +7,7 @@
  *   kieu-client: openclaw | claudecode
  */
 import { execSync } from 'node:child_process';
+import fs from 'node:fs';
 
 const PORT = process.argv[2] || '8799';
 const KIND = process.argv[3] || 'openclaw';
@@ -37,7 +38,6 @@ function runTool(name, input) {
       return { ok: true, ms: Date.now() - t0, out: String(out).slice(0, 2000) };
     }
     if (name === 'read' || name === 'Read') {
-      const fs = require('node:fs');
       return { ok: true, ms: Date.now() - t0, out: fs.readFileSync(input.path || input.file_path, 'utf8').slice(0, 2000) };
     }
     if (name === 'sessions_spawn' || name === 'Agent') {

@@ -22,7 +22,7 @@ import {
 } from './core.mjs';
 import { applySession } from './session.mjs';
 import {
-  mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP, subagentThirdParty, toolChoiceDirective,
+  mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP, subagentThirdParty, toolChoiceDirective, isSubagentTurn,
   conformToolName, conformInputToSchema,
 } from './map.mjs';
 import { AnthropicSSE, estimateTokens, genMessageId, THINKING_SIG } from './sse.mjs';
@@ -160,7 +160,7 @@ function prepBody(body, opts) {
   // phuc vu duoc (MCP cau hinh o may nay + tool subagent ao).
   ct.thirdParty = {};
   // SUBAGENT AO: gateway khong co tool uy nhiem subagent -> proxy tu cap. Xem map.mjs.
-  const subTp = subagentThirdParty(claudeTools);
+  const subTp = subagentThirdParty(claudeTools, { isSubagent: !!opts.isSubagent });
   if (subTp) ct.thirdParty = { ...ct.thirdParty, ...subTp };
   // AUTO-REGISTER (B2): advertise MCP-server tools to the model via thirdParty.
   if (MCP_AUTOREGISTER) {
@@ -506,6 +506,9 @@ async function handleMessages(req, res, body) {
   if (isUtilityTurn(body)) { const text = utilityReply(body); cap({ dir: 'utility', text }); return replyText(res, { stream, model: anthropicModel, text }); }
   const key = sessionKey(system, messages);
   // tool_choice: 'none' => coi nhu client khong khai tool nao (gateway se bi cat sach tool).
+  // Luot nay co phai cua SUB-AGENT khong? Prompt do proxy sinh ra khi uy nhiem co mang dau moc.
+  // Neu co, khong cap tiep cong cu uy nhiem - neu khong Agent lai de ra Agent.
+  const isSubagent = messages.some((m) => isSubagentTurn(contentText(m && m.content)));
   const toolChoice = toolChoiceDirective(body.tool_choice, claudeToolSet(body.tools));
   const claudeTools = claudeToolSet(toolChoice.mode === 'none' ? [] : body.tools);
   let { dir: workingDir, source: cwdSource } = resolveWorkingDir(req, system);
@@ -557,7 +560,7 @@ async function handleMessages(req, res, body) {
     }
   }
 
-  const opts = { workingDir, pmModelKey, claudeTools, claudeToolDefs: body.tools, thinking };
+  const opts = { workingDir, pmModelKey, claudeTools, claudeToolDefs: body.tools, thinking, isSubagent };
   const inputTokens = estimateTokens(system, messages);
   const messageId = genMessageId();
 
@@ -623,7 +626,7 @@ async function handleMessages(req, res, body) {
         const ctxBlock = rebuildTranscript(prior, budget);
         if (ctxBlock) { query = CTX_HEADER + ctxBlock + CTX_SEP + cur; cap({ dir: 'context_rebuilt', from: 'user_query', priorMsgs: prior.length, chars: ctxBlock.length }); dbg('mat session -> dung lai ngu canh tu', prior.length, 'message (user_query)'); }
       } else {
-        query = buildToolCard({ workingDir, claudeToolNames: claudeTools, userRules: readUserRules() }) + '\n\n' + query; // card 1 lan dau hoi thoai
+        query = buildToolCard({ workingDir, claudeToolNames: claudeTools, userRules: readUserRules(), isSubagent }) + '\n\n' + query; // card 1 lan dau hoi thoai
       }
     }
     gwBody = buildBody('USER_QUERY', { query: query.slice(0, QUERY_CAP), conversationId: conversationId || null });

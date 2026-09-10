@@ -197,7 +197,11 @@ export function buildToolResponses(results, getToolUse) {
     const gid = info.groupId || '_';
     const g = (groups[gid] = groups[gid] || { conversationId: info.conversationId, groupId: info.groupId, toolResponses: [] });
     let content = r.content == null ? '' : String(r.content);
-    let sum = summarize(r.content);
+    // Gateway tu choi TOOL_RESPONSE rong (HTTP 403 Forbidden). Rat nhieu lenh chay xong
+    // ma khong in gi: `echo ... > file`, `mkdir`, `del`, `copy`... -> phai co noi dung
+    // thay the, neu khong ca luot hong du lenh da chay thanh cong.
+    if (!content.trim()) content = r.isError ? '(that bai, khong co thong bao loi)' : '(chay xong, khong co dau ra)';
+    let sum = summarize(content);
     // askUser: gateway ky vong answer nam trong content JSON {status, answer} (theo core.mjs da chay tot),
     // KHONG phai JSON tho cua AskUserQuestion. Goi lai de model doc dung lua chon.
     if (info.postmanNative === 'askUser') {

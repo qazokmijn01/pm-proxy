@@ -335,7 +335,7 @@ const TRANSLATORS = {
     // PHAI nam trong tool_result cua chinh luot nay, neu khong model tuong subagent hong
     // va goi lai lien tuc (da quan sat: 18 lan trong mot phien).
     // Client nao khong khai khoa nay thi conformInputToSchema tu cat bo.
-    return { name: 'Task', input: { description, prompt: String(prompt), subagent_type, run_in_background: false } };
+    return { name: 'Task', input: { description, prompt: SUBAGENT_MARK + ' ' + String(prompt), subagent_type, run_in_background: false } };
   },
 };
 
@@ -450,11 +450,21 @@ export function claudeToolSet(tools) {
 // dinh tuyen ve TRANSLATORS.SubAgent -> Task/Agent cua Claude Code, la ben THUC SU chay
 // subagent. Chi khai khi client that su co tool do, khong thi im lang.
 // ---------------------------------------------------------------------------
+// MAC DINH TAT. Bat bang PM_SUBAGENT=1.
+// Ly do: khi bat, model thay co cong cu uy nhiem la dung cho ca viec vat - vi du
+// "tao file txt roi xoa di" cung bi day sang sub-agent, va sub-agent lam khong duoc.
+// Ha giong tool card van khong du. Mot tinh nang moi khong duoc pha thu dang chay.
+export const subagentEnabled = () => process.env.PM_SUBAGENT === '1';
+// Dau moc chen vao prompt khi uy nhiem. Luot nao mang dau nay tuc la SUB-AGENT ->
+// khong cap tiep cong cu uy nhiem, neu khong Agent lai de ra Agent (da xay ra tren may that).
+export const SUBAGENT_MARK = '[pm-proxy:subagent]';
+export const isSubagentTurn = (text) => String(text || '').includes(SUBAGENT_MARK);
 export const SUBAGENT_SERVER = 'pm-proxy';
 export const SUBAGENT_TOOL = SUBAGENT_SERVER + '__local__delegate_subagent';
 export const SUBAGENT_WAIT_TOOL = SUBAGENT_SERVER + '__local__await_subagent';
 
-export function subagentThirdParty(claudeToolNames) {
+export function subagentThirdParty(claudeToolNames, opts = {}) {
+  if (!subagentEnabled() || opts.isSubagent) return null;   // tat, hoac dang la sub-agent (chong de quy)
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
   if (!hasCapability(set, 'task')) return null;   // dung chung bang nang luc (DRY)
   const tp = {
@@ -636,7 +646,7 @@ export function conformInputToSchema(toolName, input, toolDefs) {
 // KHANG DINH, quang cao TEN NATIVE dang bat, khuyen dung duong dan tuyet doi.
 // Tuyet doi khong co cau phu dinh danh tinh.
 // ---------------------------------------------------------------------------
-export function buildToolCard({ workingDir, claudeToolNames, userRules } = {}) {
+export function buildToolCard({ workingDir, claudeToolNames, userRules, isSubagent } = {}) {
   const set = claudeToolNames instanceof Set ? claudeToolNames : claudeToolSet(claudeToolNames);
   const keep = [...nativesToKeep(set)];
   const toolLine = keep.length ? keep.join(', ') : 'cac cong cu doc/ghi/tim kiem/chay lenh cua workspace';
@@ -651,15 +661,16 @@ export function buildToolCard({ workingDir, claudeToolNames, userRules } = {}) {
   // SUBAGENT: tool nay do proxy tu cap (subagentThirdParty) nen gateway khong co mo ta san
   // trong huan luyen -> phai noi RO khi nao dung, keo model bo qua. Nguong dat o "viec lon
   // hoac >=2 viec doc lap" de tranh de subagent cho tung thao tac vat (tot credit).
-  if (hasCapability(set, 'task')) {          // dung chung bang nang luc (DRY) - client co the goi ten khac
+  if (subagentEnabled() && !isSubagent && hasCapability(set, 'task')) {   // sub-agent KHONG duoc uy nhiem tiep
     lines.push(
       'UY NHIEM SUB-AGENT - cong cu ' + SUBAGENT_TOOL + ' (tham so: description ngan 3-5 tu, prompt tu chua):',
-      '- BAT BUOC dung khi lan luot nay co TU 2 VIEC DOC LAP tro len (vi du: ra soat nhieu module khac nhau, tim kiem tren nhieu thu muc, kiem tra nhieu gia thuyet). Phat NHIEU tool call ' + SUBAGENT_TOOL + ' trong CUNG mot luot de chung chay DONG THOI, dung lam tuan tu.',
+      '- MAC DINH LA TU LAM. Chi uy nhiem khi luot nay co TU 2 VIEC DOC LAP tro len (vi du: ra soat nhieu module khac nhau, tim kiem tren nhieu thu muc). Khi do phat NHIEU tool call ' + SUBAGENT_TOOL + ' trong CUNG mot luot de chung chay DONG THOI.',
+      '- Viec tao/sua/xoa file, chay lenh, kiem tra nhanh: TU LAM bang cong cu san co. Uy nhiem cho nhung viec do vua cham vua de mat quyen thao tac.',
       '- NEN dung khi mot viec lon va tu chua (ra soat ca thu muc, doc nhieu file de tong hop, mot luot review day du).',
       '- KHONG dung cho viec vat - TU LAM nhanh hon va re hon: doc vai file, liet ke thu muc, tim mot file, chay mot lenh, sua mot cho da biet ro.',
       '- Uy nhiem xong ma bao cao chua dung y: TU KIEM TRA lai bang cong cu san co, dung uy nhiem lai cung mot viec (moi lan uy nhiem la mot phien rieng, rat ton).',
       '- Sub-agent KHONG thay hoi thoai nay: prompt phai tu chua (duong dan tuyet doi, muc tieu, dinh dang ket qua mong muon).',
-      '- Nguoi dung yeu cau "uy nhiem" / "sub-agent" / "chay song song" => PHAI goi cong cu nay, khong tu lam.',
+      '- Chi khi nguoi dung noi ro "uy nhiem" / "sub-agent" / "chay song song" thi moi bat buoc dung cong cu nay.',
     );
     if (hasCapability(set, 'taskwait')) lines.push(
       '- Neu ket qua tra ve chi la MA TAC VU (taskId / sessionKey / "da khoi dong") chu chua co bao cao: day la BINH THUONG. Sub-agent chay nen va bao cao se TU DEN sau vai chuc giay.',

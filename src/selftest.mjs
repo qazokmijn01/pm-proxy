@@ -12,7 +12,7 @@ import assert from 'node:assert';
 import {
   pickArg, mapPostmanToolToClaude, excludedToolsFor, buildToolCard, mapModel, claudeToolSet,
   conformToolName, conformInputToSchema,
-  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL, SUBAGENT_WAIT_TOOL, nativesToKeep, toolChoiceDirective, hasCapability,
+  subagentThirdParty, SUBAGENT_SERVER, SUBAGENT_TOOL, SUBAGENT_WAIT_TOOL, SUBAGENT_MARK, isSubagentTurn, nativesToKeep, toolChoiceDirective, hasCapability,
 } from './map.mjs';
 import { toAnthropicBody, toOpenAIResponse } from './openai.mjs';
 import { AnthropicSSE } from './sse.mjs';
@@ -20,6 +20,8 @@ import { analyzeRequest, buildToolResponses, extractAskUserAnswer, rebuildTransc
 import { runGateway, runGatewayResilient, thinkingFlag, prepBody, BufferEmitter } from './server.mjs';
 import { loadTemplate } from './core.mjs';
 import { recordToolUse, getToolUse, getSession, setSession } from './sessions.mjs';
+// Tinh nang uy nhiem MAC DINH TAT tren proxy; bat len de kiem tra logic cua no.
+process.env.PM_SUBAGENT = '1';
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); console.log('  [v]', name); pass++; } catch (e) { console.log('  [x]', name, '->', e.message); fail++; } };
@@ -240,7 +242,8 @@ ok('SubAgent -> Task {description, prompt, subagent_type}', () => {
   const r = mapPostmanToolToClaude('SubAgent', { task: 'Ra soat toan bo handler auth', agentType: 'code-reviewer' }, claudeToolSet([{ name: 'Task' }]));
   assert.equal(r.kind, 'client');
   assert.equal(r.name, 'Task');
-  assert.equal(r.input.prompt, 'Ra soat toan bo handler auth');
+  assert.ok(r.input.prompt.includes('Ra soat toan bo handler auth'));
+  assert.ok(r.input.prompt.startsWith(SUBAGENT_MARK), 'prompt phai mang dau moc de chong de quy');
   assert.equal(r.input.subagent_type, 'code-reviewer');
   assert.ok(typeof r.input.description === 'string' && r.input.description.length > 0);
 });
@@ -254,7 +257,7 @@ ok('client khai ten "Agent" => SubAgent doi ten sang Agent', () => {
   const r = mapPostmanToolToClaude('SubAgent', { prompt: 'Tim tat ca TODO' }, claudeToolSet([{ name: 'Agent' }]));
   assert.equal(r.kind, 'client');
   assert.equal(r.name, 'Agent');
-  assert.equal(r.input.prompt, 'Tim tat ca TODO');
+  assert.ok(r.input.prompt.includes('Tim tat ca TODO'));
 });
 
 ok('SubAgent thieu noi dung => drop', () => {
@@ -266,7 +269,7 @@ ok('tool AO delegate_subagent (gateway goi) => Task cua Claude Code', () => {
   const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'Ra soat auth', prompt: 'Doc toan bo src/auth va bao cao loi' }, claudeToolSet([{ name: 'Task' }]));
   assert.equal(r.kind, 'client');
   assert.equal(r.name, 'Task');
-  assert.equal(r.input.prompt, 'Doc toan bo src/auth va bao cao loi');
+  assert.ok(r.input.prompt.includes('Doc toan bo src/auth va bao cao loi'));
   assert.equal(r.input.subagent_type, 'general-purpose');
 });
 
@@ -455,7 +458,7 @@ ok('subagent: client khong khai run_in_background => tu cat bo (schema strict)',
   const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'a', prompt: 'b' }, claudeToolSet(defs));
   const input = conformInputToSchema(conformToolName(r.name, defs), r.input, defs);
   assert.equal('run_in_background' in input, false, 'khoa la phai bi cat khi additionalProperties:false');
-  assert.equal(input.prompt, 'b');
+  assert.ok(String(input.prompt).includes('b'));
 });
 
 ok('subagent: "subagents" la tool QUAN LY, khong duoc coi la tool tao sub-agent', () => {
@@ -490,8 +493,8 @@ ok('subagent: openclaw sessions_spawn -> doi sang khoa task/taskName', () => {
   assert.ok(subagentThirdParty(oc), 'co tool tao sub-agent that => phai khai');
   const r = mapPostmanToolToClaude('pm-proxy__local__delegate_subagent', { description: 'Ra soat auth', prompt: 'Doc src/auth' }, oc);
   assert.equal(r.name, 'sessions_spawn');
-  assert.equal(r.input.task, 'Doc src/auth', 'prompt -> task (khoa BAT BUOC cua openclaw)');
-  assert.equal(r.input.taskName, 'Ra soat auth');
+  assert.ok(r.input.task.includes('Doc src/auth'), 'prompt -> task (khoa BAT BUOC cua openclaw)');
+  assert.equal(r.input.taskName, 'ra-soat-auth', 'openclaw doi taskName la slug [a-z][a-z0-9_-]*');
   assert.equal(r.input.prompt, undefined, 'khong duoc de sot khoa cua Claude Code');
 });
 
@@ -792,7 +795,7 @@ await okAsync('gateway phat SubAgent (client co Task) => proxy phat tool_use Tas
     const tu = msg.content.find((b) => b.type === 'tool_use');
     assert.ok(tu, 'co tool_use block');
     assert.equal(tu.name, 'Task');
-    assert.equal(tu.input.prompt, 'Ra soat module auth');
+    assert.ok(tu.input.prompt.includes('Ra soat module auth'));
     assert.equal(tu.input.subagent_type, 'code-reviewer');
   } finally { globalThis.fetch = orig; }
 });
@@ -1018,6 +1021,66 @@ console.log('\n# Duong dan tuong doi -> tuyet doi theo thu muc lam viec');
     assert.ok(!/du\/an/.test(r.input.command));
   });
 }
+
+
+console.log('\n# Chong de quy + cong tac tat (hoi quy that: Agent de ra Agent, mat quyen file)');
+ok('ket qua tool RONG => thay bang noi dung khac (gateway 403 neu rong)', () => {
+  // `echo ... > file`, mkdir, del... chay xong khong in gi. Gui rong len gateway thi ca
+  // luot hong voi "Forbidden" du lenh da thanh cong.
+  recordToolUse('toolu_empty_1', { conversationId: 'c', groupId: 'g', postmanNative: 'executeShellCommand' });
+  const { groups } = buildToolResponses([{ toolUseId: 'toolu_empty_1', content: '', isError: false }], getToolUse);
+  const tr = groups.g.toolResponses[0];
+  assert.ok(tr.content.trim().length > 0, 'khong duoc gui content rong');
+  assert.ok(/khong co dau ra/.test(tr.content), tr.content);
+
+  recordToolUse('toolu_empty_2', { conversationId: 'c', groupId: 'g2', postmanNative: 'executeShellCommand' });
+  const r2 = buildToolResponses([{ toolUseId: 'toolu_empty_2', content: '   ', isError: true }], getToolUse);
+  assert.ok(/that bai/.test(r2.groups.g2.toolResponses[0].content));
+});
+
+ok('ket qua tool CO noi dung thi giu nguyen', () => {
+  recordToolUse('toolu_ok_1', { conversationId: 'c', groupId: 'g3', postmanNative: 'readFile' });
+  const { groups } = buildToolResponses([{ toolUseId: 'toolu_ok_1', content: 'noi dung that', isError: false }], getToolUse);
+  assert.equal(groups.g3.toolResponses[0].content, 'noi dung that');
+});
+
+ok('MAC DINH TAT: khong bat PM_SUBAGENT thi khong cap cong cu uy nhiem', () => {
+  const prev = process.env.PM_SUBAGENT;
+  try {
+    delete process.env.PM_SUBAGENT;
+    const set = claudeToolSet([{ name: 'Bash' }, { name: 'Write' }, { name: 'Agent' }]);
+    assert.equal(subagentThirdParty(set), null, 'mac dinh phai TAT - tinh nang moi khong duoc pha thu dang chay');
+    assert.ok(!buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: set }).includes(SUBAGENT_TOOL));
+  } finally { if (prev === undefined) delete process.env.PM_SUBAGENT; else process.env.PM_SUBAGENT = prev; }
+});
+
+ok('sub-agent KHONG duoc cap tiep cong cu uy nhiem', () => {
+  const set = claudeToolSet([{ name: 'Bash' }, { name: 'Write' }, { name: 'Agent' }]);
+  assert.ok(subagentThirdParty(set), 'phien thuong: co cong cu uy nhiem');
+  assert.equal(subagentThirdParty(set, { isSubagent: true }), null, 'sub-agent ma van duoc uy nhiem => Agent de ra Agent');
+});
+
+ok('card cua sub-agent khong nhac gi ve uy nhiem', () => {
+  const set = claudeToolSet([{ name: 'Bash' }, { name: 'Write' }, { name: 'Agent' }]);
+  assert.ok(buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: set }).includes(SUBAGENT_TOOL));
+  const sub = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: set, isSubagent: true });
+  assert.ok(!sub.includes(SUBAGENT_TOOL));
+  assert.ok(!/UY NHIEM SUB-AGENT/.test(sub));
+});
+
+ok('prompt gui cho sub-agent mang dau moc de nhan dien luot ke tiep', () => {
+  const set = claudeToolSet([{ name: 'Agent' }]);
+  const r = mapPostmanToolToClaude(SUBAGENT_TOOL, { description: 'a', prompt: 'lam viec X' }, set);
+  assert.ok(isSubagentTurn(r.input.prompt), 'khong co dau moc thi khong chan duoc de quy');
+  assert.ok(!isSubagentTurn('mot cau binh thuong'));
+});
+
+ok('card khong con ep uy nhiem cho viec vat (tao/xoa file, chay lenh)', () => {
+  const card = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Bash' }, { name: 'Write' }, { name: 'Agent' }]) });
+  assert.ok(/MAC DINH LA TU LAM/.test(card), 'phai noi ro mac dinh la tu lam');
+  assert.ok(/tao\/sua\/xoa file/.test(card), 'phai neu ro viec file la tu lam');
+  assert.ok(!/PHAI goi cong cu nay, khong tu lam/.test(card), 'giong ep buoc cu khien viec vat cung bi uy nhiem');
+});
 
 
 console.log(`\n${fail ? '[X]' : '[OK]'} selftest: ${pass} pass, ${fail} fail\n`);
