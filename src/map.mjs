@@ -50,7 +50,8 @@ const isPwsh = (set) => {
 // Proxy BIET thu muc lam viec, nen doi sang tuyet doi truoc khi sinh lenh.
 const absPath = (p, workingDir) => {
   const v = String(p == null ? '' : p).trim();
-  if (!workingDir || !v || v === '.') return v || String(workingDir || '.');
+  if (!v) return v;                       // khong co duong dan -> de nguyen, translator se drop
+  if (!workingDir || v === '.') return v || String(workingDir || '.');
   if (/^([a-zA-Z]:[\\/]|[\\/]|~)/.test(v)) return v;   // da tuyet doi (C:\ , C:/ , / , ~)
   return String(workingDir).replace(/[\\/]+$/, '') + '/' + v.replace(/^[.][\\/]/, '');
 };
@@ -188,23 +189,23 @@ const TRANSLATORS = {
     if (glob) return { name: 'Glob', input: { pattern: String(glob) } }; // chi tim theo ten file
     return null; // thieu ca pattern lan glob => drop
   },
-  readFile(a) {
-    const file_path = pickArg(a, 'filePath', 'path', 'file');
+  readFile(a, opts = {}) {
+    const file_path = absPath(pickArg(a, 'filePath', 'path', 'file'), opts.workingDir);
     if (!file_path) return null;
     const input = { file_path: String(file_path) };
     const offset = pickArg(a, 'offset'); if (offset != null) input.offset = Number(offset);
     const limit = pickArg(a, 'limit'); if (limit != null) input.limit = Number(limit);
     return { name: 'Read', input };
   },
-  createFile(a) { return TRANSLATORS.writeFile(a); },
-  writeFile(a) {
-    const file_path = pickArg(a, 'filePath', 'path', 'file');
+  createFile(a, opts = {}) { return TRANSLATORS.writeFile(a, opts); },
+  writeFile(a, opts = {}) {
+    const file_path = absPath(pickArg(a, 'filePath', 'path', 'file'), opts.workingDir);
     if (!file_path) return null;
     const content = pickArg(a, 'content', 'text', 'body');
     return { name: 'Write', input: { file_path: String(file_path), content: content == null ? '' : String(content) } };
   },
-  editFile(a) {
-    const file_path = pickArg(a, 'filePath', 'path', 'file');
+  editFile(a, opts = {}) {
+    const file_path = absPath(pickArg(a, 'filePath', 'path', 'file'), opts.workingDir);
     const old_string = pickArg(a, 'oldString', 'old_string', 'old');
     const new_string = pickArg(a, 'newString', 'new_string', 'new');
     if (!file_path) return null;
@@ -691,7 +692,12 @@ export function buildToolCard({ workingDir, claudeToolNames, userRules, isSubage
   }
   // Postman KHONG co native xoa file (chi create/write/edit). Model khong tu suy ra duoc:
   // no bao 'khong co cong cu xoa' roi lam RONG file thay vi xoa - da gap 2 lan tren may that.
-  if (hasCapability(set, 'bash')) lines.push('Khong co cong cu XOA file rieng. Muon xoa file/thu muc thi dung executeShellCommand (vi du: rm, del, Remove-Item) - TUYET DOI khong "xoa" bang cach ghi de file thanh rong.');
+  if (hasCapability(set, 'bash')) {
+    // Neu dung MOT lenh dung voi shell that. Liet ke ca rm/del/Remove-Item khien model
+    // chon nham: Remove-Item tren git bash bao 'command not found'.
+    const del = isPwsh(set) ? 'Remove-Item -Force' : 'rm -f';
+    lines.push('Khong co cong cu XOA file rieng. Muon xoa thi dung executeShellCommand voi lenh `' + del + '` - TUYET DOI khong "xoa" bang cach ghi de file thanh rong.');
+  }
   lines.push('Neu thu muc lam viec co file CLAUDE.md, PHAI tuan theo no.');
   // Quy tac rieng cua nguoi dung: dat CUOI card (sat noi dung nguoi dung) va noi ro nguon
   // goc, de model coi day la chi dan hop le cua chu phien chu khong phai text lot vao tu

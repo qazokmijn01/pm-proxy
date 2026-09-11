@@ -22,7 +22,7 @@ import {
 } from './core.mjs';
 import { applySession } from './session.mjs';
 import {
-  mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP, subagentThirdParty, toolChoiceDirective, isSubagentTurn,
+  mapPostmanToolToClaude, buildToolCard, claudeToolSet, excludedToolsFor, mapModel, QUERY_CAP, subagentThirdParty, toolChoiceDirective, isSubagentTurn, hasCapability,
   conformToolName, conformInputToSchema,
 } from './map.mjs';
 import { AnthropicSSE, estimateTokens, genMessageId, THINKING_SIG } from './sse.mjs';
@@ -150,6 +150,10 @@ function prepBody(body, opts) {
   dm.supportsAskUser = true;             // askUser -> AskUserQuestion native cua Claude Code (map.mjs)
   dm.supportsActionRecommendations = false;
   dm.isParallelToolCallingSupported = true;
+  // Gateway chi cho model dung web khi co co nay. De false thi no khong bao gio phat
+  // fetchUrl/webSearch -> WebFetch va WebSearch cua client thanh vo dung (da do: 0 lan
+  // dung trong toan bo lich su). Bat khi va chi khi client that su co tool do.
+  dm.enableWebAccess = hasCapability(claudeTools, 'websearch') || hasCapability(claudeTools, 'webfetch');
   if (pmModelKey) dm.selectedModel = pmModelKey;
   if (thinking === true) { dm.useThinkingModeIfAvailable = true; if (!dm.thinkingLevel) dm.thinkingLevel = 'medium'; }
   else if (thinking === false) dm.useThinkingModeIfAvailable = false;

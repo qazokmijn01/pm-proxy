@@ -300,6 +300,31 @@ ok('card: co Task => co huong dan uy nhiem sub-agent (keu goi chay dong thoi)', 
   assert.ok(/KHONG dung cho viec vat/.test(card), 'co chan lam dung');
 });
 
+ok('card: lenh XOA dung theo shell that (Remove-Item khong co trong git bash)', () => {
+  const prev = process.env.PM_SHELL;
+  try {
+    process.env.PM_SHELL = 'posix';
+    const posix = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Bash' }]) });
+    assert.ok(/rm -f/.test(posix), posix);
+    assert.ok(!/Remove-Item/.test(posix), 'goi y Remove-Item tren git bash => command not found');
+    process.env.PM_SHELL = 'powershell';
+    assert.ok(/Remove-Item/.test(buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'exec' }]) })));
+  } finally { if (prev === undefined) delete process.env.PM_SHELL; else process.env.PM_SHELL = prev; }
+});
+
+ok('doc/ghi/sua file: duong dan tuong doi noi vao thu muc du an', () => {
+  const CT2 = claudeToolSet([{ name: 'Bash' }, { name: 'Read' }, { name: 'Write' }, { name: 'Edit' }]);
+  const r = mapPostmanToolToClaude('readFile', { filePath: 'src/a.mjs' }, CT2, { workingDir: 'C:/du/an' });
+  assert.equal(r.input.file_path, 'C:/du/an/src/a.mjs');
+  const w = mapPostmanToolToClaude('createFile', { filePath: 'out/b.txt', content: 'x' }, CT2, { workingDir: 'C:/du/an' });
+  assert.equal(w.input.file_path, 'C:/du/an/out/b.txt');
+  const e = mapPostmanToolToClaude('editFile', { filePath: 'c.mjs', oldString: 'a', newString: 'b' }, CT2, { workingDir: 'C:/du/an' });
+  assert.equal(e.input.file_path, 'C:/du/an/c.mjs');
+  // tuyet doi thi giu nguyen, thieu duong dan thi van drop
+  assert.equal(mapPostmanToolToClaude('readFile', { filePath: '/tmp/a.txt' }, CT2, { workingDir: 'C:/du/an' }).input.file_path, '/tmp/a.txt');
+  assert.equal(mapPostmanToolToClaude('readFile', {}, CT2, { workingDir: 'C:/du/an' }).kind, 'drop');
+});
+
 ok('card: noi ro cach XOA file (Postman khong co native xoa)', () => {
   // Model bao "khong co cong cu xoa" roi ghi de file thanh rong - file van con tren dia.
   const withShell = buildToolCard({ workingDir: 'C:/du/an', claudeToolNames: claudeToolSet([{ name: 'Bash' }, { name: 'Write' }]) });
