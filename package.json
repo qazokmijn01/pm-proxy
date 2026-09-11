@@ -9,7 +9,8 @@
     "harvest": "node src/harvest.mjs --timeout=30",
     "test": "node src/selftest.mjs",
     "test:e2e": "node src/e2e-openai.mjs",
-    "agent-loop": "node src/agent-loop.mjs"
+    "agent-loop": "node src/agent-loop.mjs",
+    "test:cc": "node src/e2e-claudecode.mjs"
   },
   "license": "ISC",
   "dependencies": {

@@ -47,7 +47,18 @@ function runTool(name, input) {
     }
     if (name === 'Write') { fs.mkdirSync(require0.dirname(input.file_path), { recursive: true }); fs.writeFileSync(input.file_path, input.content ?? ''); return { ok: true, ms: Date.now() - t0, out: 'da ghi ' + input.file_path }; }
     if (name === 'Edit') { const cur = fs.readFileSync(input.file_path, 'utf8'); fs.writeFileSync(input.file_path, cur.replace(input.old_string, input.new_string)); return { ok: true, ms: Date.now() - t0, out: 'da sua ' + input.file_path }; }
-    if (name === 'Glob' || name === 'Grep') { return { ok: true, ms: Date.now() - t0, out: '(khong tim thay)' }; }
+    if (name === 'Glob') {
+      const base = input.path || process.cwd();
+      const out = execSync(`find ${JSON.stringify(base)} -iname ${JSON.stringify(input.pattern || '*')} 2>/dev/null | head -40`, { encoding: 'utf8', shell: 'bash.exe', windowsHide: true });
+      return { ok: true, ms: Date.now() - t0, out: out.trim() || '(khong tim thay)' };
+    }
+    if (name === 'Grep') {
+      const base = input.path || process.cwd();
+      let cmd = `grep -rn ${JSON.stringify(input.pattern || '')} ${JSON.stringify(base)}`;
+      if (input.glob) cmd += ` --include=${JSON.stringify(input.glob)}`;
+      try { const out = execSync(cmd + ' 2>/dev/null | head -30', { encoding: 'utf8', shell: 'bash.exe', windowsHide: true }); return { ok: true, ms: Date.now() - t0, out: out.trim() || '(khong co ket qua)' }; }
+      catch { return { ok: true, ms: Date.now() - t0, out: '(khong co ket qua)' }; }
+    }
     if (name === 'read' || name === 'Read') {
       return { ok: true, ms: Date.now() - t0, out: fs.readFileSync(input.path || input.file_path, 'utf8').slice(0, 2000) };
     }
